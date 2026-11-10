@@ -734,12 +734,26 @@ export function BlockEditor({
                       const formatItems = menuView.current.formatItems
                       const commands = menuView.current.commands
                       if (event.defaultPrevented) return
-                      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "c" && input.selectionStart === input.selectionEnd && rangeRef.current) {
-                        const picked = blocksBetween(blocksRef.current, rangeRef.current.anchorId, rangeRef.current.focusId)
-                        if (picked.length > 1) {
+                      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "c") {
+                        const remembered = selectionRef.current
+                        const domStart = input.selectionStart ?? 0
+                        const domEnd = input.selectionEnd ?? 0
+                        const useRemembered = domStart === domEnd && remembered?.blockId === block.id && remembered.start !== remembered.end
+                        const start = useRemembered ? remembered.start : domStart
+                        const end = useRemembered ? remembered.end : domEnd
+                        if (start !== end && block.type !== "code") {
                           event.preventDefault()
-                          publishClipboard({ kind: "blocks", blocks: picked })
+                          const sliced = sliceInline(block.content, block.marks, start, end)
+                          publishClipboard({ kind: "inline", text: sliced.text, marks: sliced.marks })
                           return
+                        }
+                        if (domStart === domEnd && rangeRef.current) {
+                          const picked = blocksBetween(blocksRef.current, rangeRef.current.anchorId, rangeRef.current.focusId)
+                          if (picked.length > 1) {
+                            event.preventDefault()
+                            publishClipboard({ kind: "blocks", blocks: picked })
+                            return
+                          }
                         }
                       }
                       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "v") {
