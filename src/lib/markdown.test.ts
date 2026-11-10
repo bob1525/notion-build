@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest"
+import { semanticBlocks } from "@/lib/blocks"
+import { blocksToMarkdown, markdownToBlocks } from "@/lib/markdown"
+import type { BlockDTO } from "@/lib/types"
+
+const sample: BlockDTO[] = [
+  { id: "1", type: "heading1", content: "少，但是清楚", checked: false, language: "", position: 0, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "2", type: "paragraph", content: "第一行\n第二行", checked: false, language: "", position: 1, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "3", type: "heading2", content: "清单", checked: false, language: "", position: 2, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "4", type: "bulleted", content: "记录", checked: false, language: "", position: 3, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "5", type: "numbered", content: "先写标题", checked: false, language: "", position: 4, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "6", type: "numbered", content: "再补列表", checked: false, language: "", position: 5, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "7", type: "todo", content: "勾选完成", checked: true, language: "", position: 6, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "8", type: "todo", content: "还没做", checked: false, language: "", position: 7, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "9", type: "divider", content: "ignored", checked: false, language: "", position: 8, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "10", type: "code", content: "const n = 1\n---\nconst y = 2", checked: false, language: "ts", position: 9, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+  { id: "11", type: "heading3", content: "附注", checked: false, language: "", position: 10, marks: [], parentId: "", collapsed: false, src: "", width: "" },
+]
+
+describe("markdown", () => {
+  it("round-trips every supported block", () => {
+    const markdown = blocksToMarkdown(sample)
+    expect(markdown).toContain("# 少，但是清楚")
+    expect(markdown).toContain("- [x] 勾选完成")
+    expect(markdown).toContain("```ts")
+    expect(semanticBlocks(markdownToBlocks(markdown))).toEqual(
+      semanticBlocks(sample).map((block) => (block.type === "divider" ? { ...block, content: "" } : block)),
+    )
+  })
+
+  it("keeps divider markers inside a code fence", () => {
+    const blocks = markdownToBlocks("```\n---\n```\n")
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].type).toBe("code")
+    expect(blocks[0].content).toBe("---")
+  })
+
+  it("parses an unclosed fence and Windows newlines without throwing", () => {
+    const blocks = markdownToBlocks("段落\r\n\r\n```python\r\nprint('hi')")
+    expect(blocks.map((block) => block.type)).toEqual(["paragraph", "code"])
+    expect(blocks[1].language).toBe("python")
+    expect(blocks[1].content).toBe("print('hi')")
+  })
+
+  it("returns an empty list for blank markdown", () => {
+    expect(markdownToBlocks("  \n\n")).toEqual([])
+    expect(blocksToMarkdown([])).toBe("")
+  })
+
+  it("round-trips a paragraph link and leaves a javascript url as text", () => {
+    const blocks = markdownToBlocks("看 [文档](https://example.com/docs)\n")
+    expect(blocks[0].content).toBe("看 文档")
+    expect(blocks[0].marks).toEqual([{ type: "link", start: 2, end: 4, href: "https://example.com/docs" }])
+    expect(blocksToMarkdown(blocks)).toBe("看 [文档](https://example.com/docs)\n")
+    const unsafe = markdownToBlocks("[点](javascript:alert(1))\n")
+    expect(unsafe[0].content).toBe("[点](javascript:alert(1))")
+    expect(unsafe[0].marks).toEqual([])
+  })
+})

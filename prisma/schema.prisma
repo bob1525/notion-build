@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String            @id @default(cuid())
+  email        String            @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  memberships  WorkspaceMember[]
+  pages        Page[]            @relation("PageAuthor")
+  favorites    Favorite[]
+  preference   UserPreference?
+}
+
+model Workspace {
+  id          String            @id @default(cuid())
+  name        String
+  icon        String            @default("🏠")
+  description String            @default("")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  members     WorkspaceMember[]
+  pages       Page[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  role        String    @default("member")
+  userId      String
+  workspaceId String
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+model Page {
+  id          String     @id @default(cuid())
+  title       String     @default("")
+  icon        String     @default("📄")
+  cover       String     @default("")
+  visibility  String     @default("private")
+  pinned      Boolean    @default(false)
+  position    Int        @default(0)
+  revision    Int        @default(0)
+  workspaceId String
+  parentId    String?
+  authorId    String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      Page?      @relation("PageChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Page[]     @relation("PageChildren")
+  author      User       @relation("PageAuthor", fields: [authorId], references: [id])
+  blocks      Block[]
+  favorites   Favorite[]
+
+  @@index([workspaceId, parentId, position])
+  @@index([authorId])
+}
+
+model Block {
+  id       String  @id @default(cuid())
+  pageId   String
+  type     String
+  content   String  @default("")
+  marks     String  @default("[]")
+  checked   Boolean @default(false)
+  language  String  @default("")
+  parentId  String  @default("")
+  collapsed Boolean @default(false)
+  src       String  @default("")
+  width     String  @default("")
+  position  Int     @default(0)
+  page     Page    @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, position])
+}
+
+model UserPreference {
+  userId    String   @id
+  sidebar   String   @default("{}")
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  pageId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageId])
+  @@index([pageId])
+}
