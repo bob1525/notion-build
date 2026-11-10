@@ -34,8 +34,8 @@ type InlineMark = {
 | `npm test` | 84 / 84，退出码 0 |
 | `npm run lint` | 无警告，退出码 0 |
 | `npm run typecheck` | 退出码 0 |
-| `npx playwright test e2e/inline-links.spec.ts` | 2 / 2 |
-| `npm run test:e2e` | 50 / 50，6.0 分钟，退出码 0。阶段开始前的 77 个单元测试和 48 个端到端测试都还在 |
+| `npx playwright test e2e/inline-links.spec.ts` | 2 / 2。修复快捷键冲突后，两条用例连跑 3 轮都通过 |
+| `npm run test:e2e` | 本地在链接刚接上时是 50 / 50，6.0 分钟。快捷键修复后的全量以 GitHub Actions 为准 |
 
 新增单元测试 7 个。`src/lib/rich-text.test.ts` 6 个，`src/lib/markdown.test.ts` 1 个：
 
@@ -60,9 +60,11 @@ type InlineMark = {
 
 编辑层盖在链接上面，所以编辑时不能直接点字打开。这是为了让点文字仍然移动光标。打开动作放在小框的「打开」里。分享页和预览没有文本框，锚点可以点。端到端两边都点过。
 
-Cmd/Ctrl+K 原先是全局搜索。编辑器在捕获阶段先看文本框：当前有选区，或者浮动条还记着刚才的选区，或者光标在链接里，就把按键 `preventDefault` 并打开链接框。搜索的冒泡监听看到已取消的按键就不再打开。空光标且不在链接里时，仍打开搜索。
+Cmd/Ctrl+K 原先是全局搜索。现在有选区或光标在链接里时先打开链接框。空光标且不在链接里时仍打开搜索。
 
-GitHub Actions 上 [42853363714](https://github.com/bob1525/notion-build/actions/runs/42853363714) 和 [42854852535](https://github.com/bob1525/notion-build/actions/runs/42854852535) 都停在 `search-input` 数量为 1。无头 Chromium 里 Playwright 的 `press("Control+k")` 会先聚焦文本框，选区被收成空光标，搜索的窗口监听又先于编辑器拿到按键。端到端在同一次调用里设好选区，再向文本框派发 Ctrl+K。这次按键到达 `document` 时选区还在；React 的 `select` 处理会紧接着把选区收成空光标。所以链接快捷键写在 hydration 之前的捕获监听里，并用 `stopImmediatePropagation` 拦住后面的监听。搜索改到按键结束后再看 `defaultPrevented`。
+GitHub Actions 上 [42853363714](https://github.com/bob1525/notion-build/actions/runs/42853363714) 和 [42854852535](https://github.com/bob1525/notion-build/actions/runs/42854852535) 都停在 `search-input` 数量为 1。无头 Chromium 里 `press("Control+k")` 会先聚焦文本框，选区被收掉。即便在派发前把选区设好，React 的 `select` 处理也会在按键到达文本框之前把选区收成空光标，搜索因此被打开。端到端改成在同一次调用里设好选区再派发 Ctrl+K，快捷键则提前到 hydration 之前的 `document` 捕获监听。
+
+通过的运行：[42864976253](https://github.com/bob1525/notion-build/actions/runs/42864976253)。lint、typecheck 和 84 个单元测试通过，50 个端到端通过，Playwright 用时 5.9 分钟。
 
 第一次端到端把链接指到 `/login` 和 `/register`。点击确实打开了新标签，但已登录的会话会立刻被送到 `/w/ws_product`，断言就失败了。这不是链接被改写。测试改成打开公开的欢迎页，新标签停在 `/share/page_welcome`。
 
