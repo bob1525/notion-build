@@ -48,9 +48,12 @@ npm start
 - 注册、登录、退出
 - 多个工作区，侧栏里切换
 - 页面树，支持嵌套子页面
-- 块编辑：标题、段落、无序 / 有序列表、待办、代码块、分割线
+- 块编辑：标题、段落、无序 / 有序列表、待办、引用、折叠、代码块、分割线、图片
 - 块内格式：加粗、斜体、删除线、行内代码。可用 `**`、`*`、`~~`、`` ` ``，也可以用 Cmd/Ctrl+B、I、Shift+X、E，或 `/` 菜单和选区浮动条
 - 同级块可以拖握把排序，松手后自动保存
+- 引用和折叠可以嵌套段落。折叠的收起状态会保存
+- 图片可以用 https 地址插入，也可以上传 png / jpeg / gif / webp，并在小、中、大之间切换
+- 代码块可选语言。JavaScript、Python、CSS 有基础着色
 - 快捷键：`#`、`##`、`###`、`-`、`1.`、`[]` 加空格，以及 `---` 和 ` ``` `
 - Markdown 编辑和预览，可以切回块
 - 按标题和正文搜索，私有页只对作者出现
@@ -95,11 +98,11 @@ npm test
 npm run test:e2e
 ```
 
-`npm test` 跑单元测试，覆盖块编辑、行内格式、Markdown 往返、搜索排序、页面树、权限和快捷键。当前 40 个通过。
+`npm test` 跑单元测试，覆盖块编辑、行内格式、Markdown 往返、搜索排序、页面树、权限、快捷键、引用、折叠、图片校验和代码着色。当前 56 个通过。
 
-`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标和富文本保存。当前 20 个通过。第一次跑之前需要 `npx playwright install chromium`。
+`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传和代码高亮。当前 31 个通过。第一次跑之前需要 `npx playwright install chromium`。
 
-阶段 1 的实现和用例表在 [docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)。
+阶段说明在 [docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)。
 
 重置本地数据：
 
@@ -110,7 +113,8 @@ npm run db:reset
 ## 已知限制
 
 - 没有实时协作。保存是最后一次写入生效。
-- 块内有加粗、斜体、删除线和行内代码，还没有行内链接，也不能上传图片和文件。斜体可能让光标和文字有轻微错位。
+- 块内有加粗、斜体、删除线和行内代码，还没有行内链接。斜体用倾斜变换，占位宽度和光标一致。
+- 可以上传图片。单张不超过 2MB，只接受 png、jpeg、gif、webp。
 - 同级块可以拖拽排序。页面树还不能拖。
 - 公开表示工作区成员可见，外加一条不易猜到的只读链接，不是更细的权限表。
 - 置顶跟页面走，收藏跟用户走。

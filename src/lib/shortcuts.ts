@@ -16,5 +16,7 @@ export function matchBlockShortcut(beforeCaret: string): { type: BlockType; chec
     return { type: "bulleted", checked: false }
   }
   if (beforeCaret === "1." || beforeCaret === "1)") return { type: "numbered", checked: false }
+  if (beforeCaret === ">>") return { type: "toggle", checked: false }
+  if (beforeCaret === ">") return { type: "quote", checked: false }
   return null
 }

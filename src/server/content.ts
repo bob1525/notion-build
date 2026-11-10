@@ -63,10 +63,15 @@ function toBlock(block: {
   marks: string
   checked: boolean
   language: string
+  parentId: string
+  collapsed: boolean
+  src: string
+  width: string
   position: number
 }): BlockDTO {
   const type = asBlockType(block.type)
   const content = type === "divider" ? "" : block.content
+  const width = block.width === "small" || block.width === "medium" || block.width === "large" ? block.width : ""
   return {
     id: block.id,
     type,
@@ -74,7 +79,11 @@ function toBlock(block: {
     checked: type === "todo" ? block.checked : false,
     language: type === "code" ? block.language.trim().toLowerCase() : "",
     position: block.position,
-    marks: type === "divider" || type === "code" ? [] : readMarks(block.marks ?? "[]", content),
+    marks: type === "divider" || type === "code" || type === "image" ? [] : readMarks(block.marks ?? "[]", content),
+    parentId: block.parentId ?? "",
+    collapsed: type === "toggle" ? Boolean(block.collapsed) : false,
+    src: type === "image" ? (block.src ?? "") : "",
+    width: type === "image" ? width || "medium" : "",
   }
 }
 
@@ -321,6 +330,10 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
           checked: block.checked,
           language: block.language,
           marks: JSON.stringify(block.marks ?? []),
+          parentId: block.parentId ?? "",
+          collapsed: block.collapsed ?? false,
+          src: block.src ?? "",
+          width: block.width ?? "",
           position: block.position,
         })),
       })

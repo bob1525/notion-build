@@ -10,7 +10,7 @@ export class ApiError extends Error {
 
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
-  if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json")
+  if (init?.body && !(init.body instanceof FormData) && !headers.has("content-type")) headers.set("content-type", "application/json")
   const response = await fetch(url, { ...init, headers })
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string }
@@ -22,7 +22,18 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function pagePayload(
   meta: { title: string; icon: string; cover: string; visibility: string; pinned: boolean },
-  blocks: Array<{ id: string; type: string; content: string; checked: boolean; language: string; marks?: unknown }>,
+  blocks: Array<{
+    id: string
+    type: string
+    content: string
+    checked: boolean
+    language: string
+    marks?: unknown
+    parentId?: string
+    collapsed?: boolean
+    src?: string
+    width?: string
+  }>,
 ) {
   return {
     title: meta.title,
@@ -30,13 +41,17 @@ export function pagePayload(
     cover: meta.cover,
     visibility: meta.visibility,
     pinned: meta.pinned,
-    blocks: blocks.map(({ id, type, content, checked, language, marks }) => ({
+    blocks: blocks.map(({ id, type, content, checked, language, marks, parentId, collapsed, src, width }) => ({
       id,
       type,
       content,
       checked,
       language,
       marks: marks ?? [],
+      parentId: parentId ?? "",
+      collapsed: Boolean(collapsed),
+      src: src ?? "",
+      width: width ?? "",
     })),
   }
 }

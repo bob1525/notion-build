@@ -35,6 +35,13 @@ textarea {
   text-shadow: 0.45px 0 currentColor, -0.45px 0 currentColor;
 }
 
+.inline-italic {
+  display: inline;
+  font-style: normal;
+  transform: skewX(-12deg);
+  transform-origin: 0 100%;
+}
+
 .inline-code {
   border-radius: 4px;
   background: rgba(55, 53, 47, 0.08);
@@ -42,6 +49,60 @@ textarea {
 
 textarea.rich-input::placeholder {
   color: #a39e98;
+}
+
+.folio-divider {
+  height: 1px;
+  margin: 14px 0;
+  border: 0;
+  background: rgba(55, 53, 47, 0.16);
+}
+
+.folio-quote {
+  border-left: 3px solid rgba(55, 53, 47, 0.2);
+  padding-left: 12px;
+}
+
+.token-keyword {
+  color: #9b3d6d;
+}
+
+.token-string {
+  color: #0f7b6c;
+}
+
+.token-comment {
+  color: #9b9a97;
+}
+
+.token-number {
+  color: #c4554d;
+}
+
+.image-small {
+  width: 240px;
+  max-width: 100%;
+}
+
+.image-medium {
+  width: 480px;
+  max-width: 100%;
+}
+
+.image-large {
+  width: 100%;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .cover-warm {

@@ -8,6 +8,9 @@ export const BLOCK_TYPES = [
   "todo",
   "code",
   "divider",
+  "quote",
+  "toggle",
+  "image",
 ] as const
 
 export type BlockType = (typeof BLOCK_TYPES)[number]
@@ -25,6 +28,9 @@ export type InlineMark = {
   end: number
 }
 
+export const IMAGE_WIDTHS = ["small", "medium", "large"] as const
+export type ImageWidth = (typeof IMAGE_WIDTHS)[number]
+
 export type BlockDTO = {
   id: string
   type: BlockType
@@ -33,6 +39,10 @@ export type BlockDTO = {
   language: string
   position: number
   marks: InlineMark[]
+  parentId: string
+  collapsed: boolean
+  src: string
+  width: "" | ImageWidth
 }
 
 export type PageMeta = {

@@ -23,7 +23,7 @@ export function setBlockType(
     blocks.map((block) => {
       if (block.id !== id) return block
       const content = type === "divider" ? "" : (options?.content ?? block.content)
-      const marks = type === "divider" || type === "code" ? [] : applyTextChange(block.content, block.marks, content).marks
+      const marks = type === "divider" || type === "code" || type === "image" ? [] : applyTextChange(block.content, block.marks, content).marks
       return {
         ...block,
         type,
@@ -31,6 +31,9 @@ export function setBlockType(
         marks,
         checked: type === "todo" ? (options?.checked ?? block.checked) : false,
         language: type === "code" ? block.language : "",
+        collapsed: type === "toggle" ? block.collapsed : false,
+        src: type === "image" ? block.src : "",
+        width: type === "image" ? block.width || "medium" : "",
       }
     }),
   )
@@ -85,13 +88,29 @@ export function splitBlock(
       id: nextId(options),
       type: block.type,
       language: block.type === "code" ? block.language : "",
+      parentId: block.parentId,
     })
     return { blocks: insertBlockAfter(blocks, id, created), focusId: created.id, caret: 0 }
   }
 
-  if (block.type === "code" || block.type === "divider") {
-    const created = createBlock({ id: nextId(options) })
+  if (block.type === "code" || block.type === "divider" || block.type === "image") {
+    const created = createBlock({ id: nextId(options), parentId: block.parentId })
     return { blocks: insertBlockAfter(blocks, id, created), focusId: created.id, caret: 0 }
+  }
+
+  if (block.type === "quote" || block.type === "toggle") {
+    const parts = splitInlineContent(block.content, block.marks, start, end)
+    const opened = blocks.map((item) =>
+      item.id === id ? { ...item, content: parts.beforeText, marks: parts.beforeMarks, collapsed: false } : item,
+    )
+    const created = createBlock({
+      id: nextId(options),
+      type: "paragraph",
+      content: parts.afterText,
+      marks: parts.afterMarks,
+      parentId: id,
+    })
+    return { blocks: insertChild(opened, id, created), focusId: created.id, caret: 0 }
   }
 
   const parts = splitInlineContent(block.content, block.marks, start, end)
@@ -101,6 +120,7 @@ export function splitBlock(
     content: parts.afterText,
     marks: parts.afterMarks,
     checked: block.type === "todo" ? false : block.checked,
+    parentId: block.parentId,
   })
   const next = [
     ...blocks.slice(0, index),
@@ -111,19 +131,63 @@ export function splitBlock(
   return { blocks: withPositions(next), focusId: created.id, caret: 0 }
 }
 
+export function subtreeIds(blocks: BlockDTO[], id: string, seen = new Set<string>()): string[] {
+  if (seen.has(id)) return []
+  seen.add(id)
+  const ids = [id]
+  for (const block of blocks) {
+    if (block.parentId === id) ids.push(...subtreeIds(blocks, block.id, seen))
+  }
+  return ids
+}
+
+export function insertChild(blocks: BlockDTO[], parentId: string, block: BlockDTO) {
+  const parent = blocks.find((item) => item.id === parentId)
+  if (!parent || (parent.type !== "quote" && parent.type !== "toggle")) return blocks
+  const child = { ...block, parentId }
+  const ids = new Set(subtreeIds(blocks, parentId))
+  let last = blocks.findIndex((item) => item.id === parentId)
+  blocks.forEach((item, index) => {
+    if (ids.has(item.id)) last = Math.max(last, index)
+  })
+  const next = [...blocks.slice(0, last + 1), child, ...blocks.slice(last + 1)].map((item) =>
+    item.id === parentId ? { ...item, collapsed: false } : item,
+  )
+  return withPositions(next)
+}
+
+export function nestUnderPrevious(blocks: BlockDTO[], id: string) {
+  const block = blocks.find((item) => item.id === id)
+  if (!block) return blocks
+  const siblings = blocks.filter((item) => item.parentId === block.parentId)
+  const index = siblings.findIndex((item) => item.id === id)
+  const previous = siblings[index - 1]
+  if (!previous || (previous.type !== "quote" && previous.type !== "toggle")) return blocks
+  if (subtreeIds(blocks, id).includes(previous.id)) return blocks
+  return withPositions(blocks.map((item) => (item.id === id ? { ...item, parentId: previous.id } : item)))
+}
+
+export function unnestBlock(blocks: BlockDTO[], id: string) {
+  const block = blocks.find((item) => item.id === id)
+  if (!block?.parentId) return blocks
+  const parent = blocks.find((item) => item.id === block.parentId)
+  return withPositions(blocks.map((item) => (item.id === id ? { ...item, parentId: parent?.parentId ?? "" } : item)))
+}
+
 export function removeBlock(blocks: BlockDTO[], id: string): EditorResult {
   const index = blocks.findIndex((block) => block.id === id)
   if (index < 0) return { blocks, focusId: id, caret: 0 }
-  if (blocks.length === 1) {
-    const emptied = createBlock({ id: blocks[0].id, type: "paragraph", content: "" })
+  const removeIds = new Set(subtreeIds(blocks, id))
+  const next = blocks.filter((block) => !removeIds.has(block.id))
+  if (!next.length) {
+    const emptied = createBlock({ id: blocks[index].id, type: "paragraph", content: "" })
     return { blocks: [emptied], focusId: emptied.id, caret: 0 }
   }
-  const next = blocks.filter((block) => block.id !== id)
-  const focus = next[Math.max(0, index - 1)]
+  const focus = [...blocks.slice(0, index)].reverse().find((block) => !removeIds.has(block.id)) ?? next[0]
   return {
     blocks: withPositions(next),
     focusId: focus.id,
-    caret: focus.type === "divider" ? 0 : focus.content.length,
+    caret: focus.type === "divider" || focus.type === "image" ? 0 : focus.content.length,
   }
 }
 
@@ -132,7 +196,7 @@ export function backspaceAtStart(blocks: BlockDTO[], id: string): EditorResult |
   if (index < 0) return null
   const block = blocks[index]
 
-  if (block.content === "" || block.type === "divider") {
+  if (block.content === "" || block.type === "divider" || block.type === "image") {
     return removeBlock(blocks, id)
   }
 
@@ -145,7 +209,7 @@ export function backspaceAtStart(blocks: BlockDTO[], id: string): EditorResult |
 
   if (block.type === "code") return null
   const previous = blocks[index - 1]
-  if (previous.type === "divider" || previous.type === "code") return null
+  if (previous.type === "divider" || previous.type === "code" || previous.type === "image") return null
 
   const caret = previous.content.length
   const combined = concatInline(previous.content, previous.marks, block.content, block.marks)

@@ -7,7 +7,13 @@ async function login(page: Page) {
   await page.getByTestId("login-email").fill(DEMO_USERS.nash.email)
   await page.getByTestId("login-password").fill(DEMO_USERS.nash.password)
   await page.getByTestId("login-submit").click()
-  await expect(page.getByTestId("sidebar")).toBeVisible({ timeout: 60_000 })
+  const sidebar = page.getByTestId("sidebar")
+  if (!(await sidebar.isVisible().catch(() => false))) {
+    await sidebar.waitFor({ state: "visible", timeout: 20_000 }).catch(async () => {
+      await page.getByTestId("login-submit").click()
+    })
+  }
+  await expect(sidebar).toBeVisible({ timeout: 60_000 })
 }
 
 async function createPage(page: Page, title: string) {
@@ -281,4 +287,50 @@ test("saves bold, italic, strike, and inline code, then reloads them", async ({ 
   await page.reload()
   await expect(page.locator('[data-inline-marks~="bold"]')).toHaveCount(0)
   await expect(page.getByTestId("block-input").first()).toHaveValue("你好世界")
+})
+
+test("keeps the caret aligned with italic text", async ({ page }) => {
+  await createPage(page, `斜体对齐${Date.now()}`)
+  const input = page.getByTestId("block-input").first()
+  const saved = patchSaved(page)
+  await input.fill("甲乙丙丁")
+  await saved
+  await input.click()
+  await page.keyboard.press("Home")
+  await page.keyboard.press("ArrowRight")
+  await page.keyboard.down("Shift")
+  await page.keyboard.press("ArrowRight")
+  await page.keyboard.press("ArrowRight")
+  await page.keyboard.up("Shift")
+  const marked = patchSaved(page)
+  await page.keyboard.press("Control+i")
+  await marked
+  await expect(page.locator('[data-inline-marks~="italic"]')).toHaveText("乙丙")
+  const metrics = await page.evaluate(() => {
+    const textarea = document.querySelector<HTMLTextAreaElement>("[data-testid='block-input']")
+    const italic = document.querySelector<HTMLElement>('[data-inline-marks~="italic"]')
+    if (!textarea || !italic) return null
+    const style = getComputedStyle(textarea)
+    const probe = document.createElement("span")
+    probe.style.position = "absolute"
+    probe.style.visibility = "hidden"
+    probe.style.whiteSpace = "pre"
+    probe.style.font = style.font
+    probe.style.fontStyle = "normal"
+    probe.textContent = "乙丙"
+    document.body.appendChild(probe)
+    const probeWidth = probe.offsetWidth
+    probe.remove()
+    const computed = getComputedStyle(italic)
+    return {
+      fontStyle: computed.fontStyle,
+      transform: computed.transform,
+      probeWidth,
+      spanWidth: italic.offsetWidth,
+    }
+  })
+  expect(metrics).not.toBeNull()
+  expect(metrics?.fontStyle).toBe("normal")
+  expect(metrics?.transform).not.toBe("none")
+  expect(Math.abs((metrics?.probeWidth ?? 0) - (metrics?.spanWidth ?? 0))).toBeLessThanOrEqual(1)
 })

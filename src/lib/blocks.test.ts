@@ -17,10 +17,10 @@ describe("blocks", () => {
 
   it("uses a stable empty paragraph so server and client markup match", () => {
     expect(ensureBlocks([], "page_1")).toEqual([
-      { id: "empty-page_1", type: "paragraph", content: "", checked: false, language: "", position: 0, marks: [] },
+      { id: "empty-page_1", type: "paragraph", content: "", checked: false, language: "", position: 0, marks: [], parentId: "", collapsed: false, src: "", width: "" },
     ])
     expect(ensureBlocks([
-      { id: "a", type: "paragraph", content: "hi", checked: false, language: "", position: 4, marks: [] },
+      { id: "a", type: "paragraph", content: "hi", checked: false, language: "", position: 4, marks: [], parentId: "", collapsed: false, src: "", width: "" },
     ], "page_1")[0].position).toBe(0)
   })
 })

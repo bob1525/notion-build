@@ -9,12 +9,15 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  ChevronRight,
+  Image as ImageIcon,
   Italic,
   List,
   ListOrdered,
   ListTodo,
   Minus,
   Plus,
+  Quote,
   Strikethrough,
   Trash2,
   Type,
@@ -22,6 +25,9 @@ import {
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { blockTextClass, listMarker } from "@/components/block-style"
+import { CodeText } from "@/components/code-text"
+import { DividerRule } from "@/components/divider-rule"
+import { ImageBlock } from "@/components/image-block"
 import { InlineText } from "@/components/inline-text"
 import { CODE_LANGUAGES, filterCommands, filterFormatCommands, SLASH_COMMANDS, type SlashCommand } from "@/lib/constants"
 import { createBlock } from "@/lib/blocks"
@@ -29,11 +35,14 @@ import { cn } from "@/lib/cn"
 import {
   backspaceAtStart,
   insertBlockAfter,
+  insertChild,
   moveBlock,
+  nestUnderPrevious,
   removeBlock,
   reorderBlocks,
   setBlockType,
   splitBlock,
+  unnestBlock,
   updateBlock,
 } from "@/lib/editor-state"
 import { applyTextChange, consumeInlineMarkup, mapCaret, marksAtCaret, marksCovering, toggleInlineMark } from "@/lib/rich-text"
@@ -50,6 +59,9 @@ const ICONS: Record<BlockType, typeof Type> = {
   todo: ListTodo,
   code: Code,
   divider: Minus,
+  quote: Quote,
+  toggle: ChevronRight,
+  image: ImageIcon,
 }
 
 type MenuState = {
@@ -73,6 +85,8 @@ function placeholderFor(block: BlockDTO, active: boolean) {
   if (block.type === "bulleted" || block.type === "numbered") return "列表项"
   if (block.type === "todo") return "待办"
   if (block.type === "code") return "写点代码"
+  if (block.type === "quote") return "引用"
+  if (block.type === "toggle") return "折叠标题"
   return ""
 }
 
@@ -216,7 +230,9 @@ export function BlockEditor({
     const element = document.elementFromPoint(clientX, clientY)
     const row = element?.closest<HTMLElement>("[data-block-id]")
     const id = row?.dataset.blockId
-    if (!row || !id || id === dragSource.current) {
+    const source = blocksRef.current.find((item) => item.id === dragSource.current)
+    const targetBlock = blocksRef.current.find((item) => item.id === id)
+    if (!row || !id || id === dragSource.current || !source || !targetBlock || source.parentId !== targetBlock.parentId) {
       dropRef.current = null
       setDropTarget(null)
       return
@@ -238,16 +254,18 @@ export function BlockEditor({
   }
 
   function insertBelow(blockId: string) {
-    const created = createBlock()
-    onChange(insertBlockAfter(blocks, blockId, created))
+    const current = blocksRef.current.find((item) => item.id === blockId)
+    const created = createBlock({ parentId: current?.parentId ?? "" })
+    onChange(insertBlockAfter(blocksRef.current, blockId, created))
     focusBlock(created.id, 0)
     setMenu({ kind: "slash", blockId: created.id, query: "", index: 0 })
   }
 
-  return (
-    <div data-testid="block-editor" className="relative">
-      {blocks.map((block, index) => {
-        const marker = listMarker(block.type, index, blocks)
+  const roots = blocks.filter((block) => !block.parentId)
+
+  function renderList(items: BlockDTO[]) {
+    return items.map((block, index) => {
+        const marker = listMarker(block.type, index, items)
         const active = activeId === block.id
         return (
           <div
@@ -347,10 +365,25 @@ export function BlockEditor({
                   }
                 }}
               >
-                <hr className="border-black/10" />
+                <DividerRule />
               </div>
+            ) : block.type === "image" ? (
+              <ImageBlock block={block} onPatch={(patch) => onChange(updateBlock(blocksRef.current, block.id, patch))} />
             ) : (
-              <div className="flex items-start gap-2">
+              <div className={cn("flex items-start gap-2", block.type === "quote" && "folio-quote")}>
+                {block.type === "toggle" ? (
+                  <button
+                    type="button"
+                    data-testid="toggle-collapse"
+                    aria-expanded={!block.collapsed}
+                    aria-label={block.collapsed ? "展开" : "收起"}
+                    className="mt-1 rounded p-0.5 text-muted hover:bg-black/[0.06]"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => onChange(updateBlock(blocksRef.current, block.id, { collapsed: !block.collapsed }))}
+                  >
+                    <ChevronRight size={16} className={cn("transition", !block.collapsed && "rotate-90")} />
+                  </button>
+                ) : null}
                 {block.type === "todo" ? (
                   <input
                     type="checkbox"
@@ -381,11 +414,15 @@ export function BlockEditor({
                     </label>
                   ) : null}
                   <div className="grid">
-                  {block.type !== "code" ? (
+                  {block.type === "code" ? (
+                    <pre aria-hidden className={cn(blockTextClass("code"), "pointer-events-none col-start-1 row-start-1 whitespace-pre-wrap break-words px-3 pb-2.5 text-ink")}>
+                      <code>{block.content ? <CodeText code={block.content} language={block.language} /> : <span className="opacity-0">.</span>}</code>
+                    </pre>
+                  ) : (
                     <div aria-hidden className={cn(blockTextClass(block.type), "pointer-events-none col-start-1 row-start-1 whitespace-pre-wrap break-words text-ink", block.checked && "text-muted line-through")}>
                       {block.content ? <InlineText text={block.content} marks={block.marks} /> : <span className="opacity-0">.</span>}
                     </div>
-                  ) : null}
+                  )}
                   <textarea
                     ref={(node) => {
                       if (node) inputRefs.current.set(block.id, node)
@@ -516,6 +553,15 @@ export function BlockEditor({
                         focusBlock(result.focusId, result.caret)
                         return
                       }
+                      if (event.key === "Tab" && block.type !== "code" && !menu && input.selectionStart === 0 && input.selectionEnd === 0) {
+                        const next = event.shiftKey ? unnestBlock(blocks, block.id) : nestUnderPrevious(blocks, block.id)
+                        if (next !== blocks) {
+                          event.preventDefault()
+                          onChange(next)
+                          focusBlock(block.id, 0)
+                          return
+                        }
+                      }
                       if (block.type === "code" && event.key === "Tab") {
                         event.preventDefault()
                         const start = input.selectionStart
@@ -534,20 +580,20 @@ export function BlockEditor({
                         return
                       }
                       if (event.key === "ArrowUp" && input.selectionStart === 0 && input.selectionEnd === 0 && index > 0) {
-                        const previous = blocks[index - 1]
+                        const previous = items[index - 1]
                         event.preventDefault()
-                        focusBlock(previous.id, previous.type === "divider" ? 0 : previous.content.length)
+                        focusBlock(previous.id, previous.type === "divider" || previous.type === "image" ? 0 : previous.content.length)
                         return
                       }
-                      if (event.key === "ArrowDown" && input.selectionStart === input.value.length && input.selectionEnd === input.value.length && index < blocks.length - 1) {
-                        const next = blocks[index + 1]
+                      if (event.key === "ArrowDown" && input.selectionStart === input.value.length && input.selectionEnd === input.value.length && index < items.length - 1) {
+                        const next = items[index + 1]
                         event.preventDefault()
                         focusBlock(next.id, 0)
                       }
                     }}
                     className={cn(
                       blockTextClass(block.type),
-                      block.type === "code" ? "px-3 pb-2.5" : "rich-input col-start-1 row-start-1 text-transparent caret-ink",
+                      block.type === "code" ? "whitespace-pre-wrap px-3 pb-2.5 rich-input col-start-1 row-start-1 text-transparent caret-ink" : "rich-input col-start-1 row-start-1 text-transparent caret-ink",
                       block.checked && "text-muted line-through",
                     )}
                   />
@@ -555,9 +601,36 @@ export function BlockEditor({
                 </div>
               </div>
             )}
+            {block.type === "quote" || block.type === "toggle" ? (
+              <div className="mt-1 ml-6">
+                <button
+                  type="button"
+                  data-testid="add-nested"
+                  className="rounded px-1 py-0.5 text-xs text-muted hover:bg-black/[0.05]"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    const created = createBlock({ parentId: block.id })
+                    onChange(insertChild(blocksRef.current, block.id, created))
+                    focusBlock(created.id, 0)
+                  }}
+                >
+                  添加嵌套内容
+                </button>
+                {!block.collapsed ? (
+                  <div data-testid={block.type === "quote" ? "quote-children" : "toggle-body"} className="border-l border-black/10 pl-3">
+                    {renderList(blocks.filter((item) => item.parentId === block.id))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )
-      })}
+    })
+  }
+
+  return (
+    <div data-testid="block-editor" className="relative">
+      {renderList(roots)}
       {menu && coords
         ? createPortal(
             <div

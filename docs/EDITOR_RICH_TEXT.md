@@ -21,7 +21,7 @@ type InlineMark = { type: "bold" | "italic" | "code" | "strike"; start: number; 
 - 加粗用 `text-shadow` 描边，不改成 `font-weight`，这样字宽不变，光标不会和覆盖层错位。
 - 删除线用 `line-through`。
 - 行内代码只加背景，不加内边距。
-- 斜体用 `font-style: italic`。斜体的字宽和正体不完全一样，长段落里光标可能轻微漂移。这是当前已知限制。
+- 斜体不用 `font-style: italic`。斜体字宽和正体不一样，文本框仍按正体排光标，两者会错开。覆盖层用 `display: inline` 加 `transform: skewX(-12deg)`，变换发生在布局之后，占位宽度和文本框一致，光标仍落在字符边界上。
 
 只读视图和分享页用同一个 `InlineText`。Markdown 导出用 `serializeInlineMarkup`，外层到内层的顺序是加粗、斜体、删除线、行内代码，相邻片段会共用已经打开的标记。导回时 `parseInlineMarkup` 还原成纯文本加 `marks`。代码块正文不解析行内标记。
 
@@ -55,4 +55,6 @@ type InlineMark = { type: "bold" | "italic" | "code" | "strike"; start: number; 
 
 ## 测试
 
-解析、渲染、嵌套、取消和输入位移在 `src/lib/rich-text.test.ts`，9 个单元测试。保存后刷新在 `e2e/editor-phase1.spec.ts` 的「saves bold, italic, strike, and inline code, then reloads them」：快捷键加粗、`/斜体`、浮动条删除线、打出 `` `code` ``，刷新后四段格式都在；再按一次 Cmd/Ctrl+B 取消加粗，刷新后加粗消失。汇总表见 [PHASE1_TESTS.md](./PHASE1_TESTS.md)。
+解析、渲染、嵌套、取消和输入位移在 `src/lib/rich-text.test.ts`，9 个单元测试。保存后刷新在 `e2e/editor-phase1.spec.ts` 的「saves bold, italic, strike, and inline code, then reloads them」：快捷键加粗、`/斜体`、浮动条删除线、打出 `` `code` ``，刷新后四段格式都在；再按一次 Cmd/Ctrl+B 取消加粗，刷新后加粗消失。
+
+斜体占位另有两条测试。`src/lib/inline-style.test.ts` 锁定样式表：`.inline-italic` 必须是 `font-style: normal`、`display: inline` 和 `skewX(-12deg)`，不能写回 `font-style: italic`。端到端「keeps the caret aligned with italic text」把「乙丙」设成斜体，再用文本框的正体字体量出同一段文字的宽度，和斜体节点的 `offsetWidth` 比较，差不超过 1px。`offsetWidth` 不计 transform 的视觉外扩，所以它量的是光标实际使用的前进宽度。汇总表见 [PHASE1_TESTS.md](./PHASE1_TESTS.md)。

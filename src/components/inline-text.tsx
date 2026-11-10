@@ -14,7 +14,7 @@ export function InlineText({ text, marks, className }: { text: string; marks: In
           data-inline-marks={segment.marks.join(" ")}
           className={cn(
             segment.marks.includes("bold") && "inline-bold",
-            segment.marks.includes("italic") && "italic",
+            segment.marks.includes("italic") && "inline-italic",
             segment.marks.includes("strike") && "line-through",
             segment.marks.includes("code") && "inline-code",
           )}

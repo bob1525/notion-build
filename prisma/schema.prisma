@@ -71,11 +71,15 @@ model Block {
   id       String  @id @default(cuid())
   pageId   String
   type     String
-  content  String  @default("")
-  marks    String  @default("[]")
-  checked  Boolean @default(false)
-  language String  @default("")
-  position Int     @default(0)
+  content   String  @default("")
+  marks     String  @default("[]")
+  checked   Boolean @default(false)
+  language  String  @default("")
+  parentId  String  @default("")
+  collapsed Boolean @default(false)
+  src       String  @default("")
+  width     String  @default("")
+  position  Int     @default(0)
   page     Page    @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([pageId, position])

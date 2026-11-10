@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { normalizeMarks } from "@/lib/rich-text"
-import { BLOCK_TYPES, INLINE_MARKS, type BlockDTO, type BlockType, type InlineMark } from "@/lib/types"
+import { BLOCK_TYPES, IMAGE_WIDTHS, INLINE_MARKS, type BlockDTO, type BlockType, type ImageWidth, type InlineMark } from "@/lib/types"
 
 export const inlineMarkSchema = z.object({
   type: z.enum(INLINE_MARKS),
@@ -15,35 +15,68 @@ export const blockInputSchema = z.object({
   checked: z.boolean().optional().default(false),
   language: z.string().max(32).optional().default(""),
   marks: z.array(inlineMarkSchema).max(200).optional().default([]),
+  parentId: z.string().max(80).optional().default(""),
+  collapsed: z.boolean().optional().default(false),
+  src: z.string().max(2000).optional().default(""),
+  width: z.enum(["", ...IMAGE_WIDTHS]).optional().default(""),
 })
 
+const PLAIN_MARK_TYPES = new Set<BlockType>(["divider", "code", "image"])
+
+function imageWidth(value: string | undefined): "" | ImageWidth {
+  return value === "small" || value === "medium" || value === "large" ? value : ""
+}
+
 export function createBlock(partial?: Partial<BlockDTO>): BlockDTO {
-  const content = partial?.type === "divider" ? "" : (partial?.content ?? "")
   const type = partial?.type ?? "paragraph"
+  const content = type === "divider" ? "" : (partial?.content ?? "")
   return {
     id: partial?.id ?? crypto.randomUUID(),
     type,
     content,
-    checked: partial?.checked ?? false,
-    language: partial?.language ?? "",
+    checked: type === "todo" ? Boolean(partial?.checked) : false,
+    language: type === "code" ? (partial?.language ?? "") : "",
     position: partial?.position ?? 0,
-    marks: type === "divider" || type === "code" ? [] : normalizeMarks(content, partial?.marks ?? []),
+    marks: PLAIN_MARK_TYPES.has(type) ? [] : normalizeMarks(content, partial?.marks ?? []),
+    parentId: partial?.parentId ?? "",
+    collapsed: type === "toggle" ? Boolean(partial?.collapsed) : false,
+    src: type === "image" ? (partial?.src ?? "").trim() : "",
+    width: type === "image" ? imageWidth(partial?.width) || "medium" : "",
   }
 }
 
+function validParent(block: BlockDTO, byId: Map<string, BlockDTO>) {
+  const seen = new Set<string>([block.id])
+  let current = block.parentId
+  while (current) {
+    if (seen.has(current)) return ""
+    const parent = byId.get(current)
+    if (!parent || (parent.type !== "quote" && parent.type !== "toggle")) return ""
+    seen.add(current)
+    current = parent.parentId
+  }
+  return block.parentId
+}
+
 export function withPositions(blocks: BlockDTO[]): BlockDTO[] {
-  return blocks.map((block, position) => {
-    const content = block.type === "divider" ? "" : block.content
+  const prepared = blocks.map((block, position) => {
     const type = block.type
+    const content = type === "divider" ? "" : block.content
     return {
       ...block,
       position,
       content,
       checked: type === "todo" ? Boolean(block.checked) : false,
       language: type === "code" ? block.language.trim().toLowerCase() : "",
-      marks: type === "divider" || type === "code" ? [] : normalizeMarks(content, block.marks ?? []),
+      marks: PLAIN_MARK_TYPES.has(type) ? [] : normalizeMarks(content, block.marks ?? []),
+      parentId: block.parentId ?? "",
+      collapsed: type === "toggle" ? Boolean(block.collapsed) : false,
+      src: type === "image" ? (block.src ?? "").trim() : "",
+      width: (type === "image" ? imageWidth(block.width) || "medium" : "") as BlockDTO["width"],
     }
   })
+  const byId = new Map(prepared.map((block) => [block.id, block]))
+  return prepared.map((block) => ({ ...block, parentId: validParent(block, byId) }))
 }
 
 export function ensureBlocks(blocks: BlockDTO[], pageId: string) {
@@ -64,6 +97,10 @@ export function normalizeBlocks(input: Array<z.input<typeof blockInputSchema>>):
       checked: block.checked,
       language: block.language,
       marks: (block.marks ?? []) as InlineMark[],
+      parentId: block.parentId,
+      collapsed: block.collapsed,
+      src: block.src,
+      width: block.width,
       position: index,
     })
   })
