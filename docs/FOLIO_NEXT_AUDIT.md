@@ -102,4 +102,4 @@
 
 ## GitHub Actions
 
-本地命令和 CI 的步骤相同。分支头的运行链接在推送并通过之后写入这一节。
+本地命令和 CI 的步骤相同。提交 `d7b6881` 的 pull request 运行 [42888587599](https://github.com/bob1525/notion-build/actions/runs/42888587599) 通过。lint、typecheck 和 108 个单元测试通过，56 个端到端通过，Playwright 用时 9.3 分钟。同一提交的 push 运行 [42888573451](https://github.com/bob1525/notion-build/actions/runs/42888573451) 也通过，Playwright 用时 8.2 分钟。原先 77 个单元和 48 个端到端的基线仍是 [42847585112](https://github.com/bob1525/notion-build/actions/runs/42847585112)。
