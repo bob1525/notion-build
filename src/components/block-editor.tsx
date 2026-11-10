@@ -144,8 +144,6 @@ export function BlockEditor({
   const blocksRef = useRef(blocks)
   const selectionRef = useRef<{ blockId: string; start: number; end: number } | null>(null)
   const openLinkEditorRef = useRef<(block: BlockDTO, start: number, end: number) => void>(() => {})
-  const onLinkKeyRef = useRef<(event: KeyboardEvent) => void>(() => {})
-  const linkBound = useRef(new WeakSet<HTMLTextAreaElement>())
   const dragSource = useRef<string | null>(null)
   const pendingFormat = useRef<{ blockId: string; marks: InlineMarkType[]; caret: number } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -240,6 +238,22 @@ export function BlockEditor({
     setLinkBox({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 300)), top: Math.max(8, rect.top - 92) })
   }, [linkEditor, blocks])
 
+  useEffect(() => {
+    const openRequestedLink = () => {
+      const request = document.documentElement.dataset.linkRequest
+      if (!request) return
+      delete document.documentElement.dataset.linkRequest
+      const [blockId, startText, endText] = request.split("|")
+      const block = blocksRef.current.find((item) => item.id === blockId)
+      if (!block) return
+      openLinkEditorRef.current(block, Number(startText), Number(endText))
+    }
+    const observer = new MutationObserver(openRequestedLink)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-link-request"] })
+    openRequestedLink()
+    return () => observer.disconnect()
+  }, [])
+
   const linkFocusKey = linkEditor ? `${linkEditor.blockId}:${linkEditor.start}:${linkEditor.end}` : ""
   useEffect(() => {
     if (!linkFocusKey) return
@@ -295,27 +309,6 @@ export function BlockEditor({
     })
   }
   openLinkEditorRef.current = openLinkEditor
-  onLinkKeyRef.current = (event) => {
-    if (event.defaultPrevented) return
-    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return
-    const input = event.currentTarget
-    if (!(input instanceof HTMLTextAreaElement)) return
-    const block = blocksRef.current.find((item) => item.id === input.dataset.blockId)
-    if (!block || block.type === "code") return
-    const domStart = input.selectionStart ?? 0
-    const domEnd = input.selectionEnd ?? 0
-    const remembered = selectionRef.current
-    const useRemembered = domStart === domEnd && remembered?.blockId === block.id && remembered.start !== remembered.end
-    const start = useRemembered ? remembered.start : domStart
-    const end = useRemembered ? remembered.end : domEnd
-    const inside = linkCovering(block.marks, start, end)
-    if (start === end && !inside) return
-    event.preventDefault()
-    event.stopPropagation()
-    const from = inside && start === end ? inside.start : Math.min(start, end)
-    const to = inside && start === end ? inside.end : Math.max(start, end)
-    openLinkEditor(block, from, to)
-  }
 
   function commitLink(event: FormEvent) {
     event.preventDefault()
@@ -579,16 +572,13 @@ export function BlockEditor({
                   )}
                   <textarea
                     ref={(node) => {
-                      if (node) {
-                        inputRefs.current.set(block.id, node)
-                        if (!linkBound.current.has(node)) {
-                          linkBound.current.add(node)
-                          node.addEventListener("keydown", (event) => onLinkKeyRef.current(event), true)
-                        }
-                      } else inputRefs.current.delete(block.id)
+                      if (node) inputRefs.current.set(block.id, node)
+                      else inputRefs.current.delete(block.id)
                     }}
                     data-testid="block-input"
                     data-block-id={block.id}
+                    data-block-type={block.type}
+                    data-link-ranges={block.marks.filter((mark) => mark.type === "link" && mark.href).map((mark) => `${mark.start}:${mark.end}`).join(",")}
                     value={block.content}
                     rows={1}
                     spellCheck={block.type !== "code"}
