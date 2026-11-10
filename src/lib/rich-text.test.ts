@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest"
 import {
   applyTextChange,
+  clearInlineLink,
   consumeInlineMarkup,
   mapCaret,
+  normalizeMarks,
   parseInlineMarkup,
   renderInline,
+  sanitizeLinkHref,
   serializeInlineMarkup,
+  setInlineLink,
+  splitInlineContent,
+  concatInline,
   toggleInlineMark,
 } from "@/lib/rich-text"
 
@@ -86,5 +92,63 @@ describe("inline rich text", () => {
     const parsed = parseInlineMarkup(source)
     const again = parseInlineMarkup(serializeInlineMarkup(parsed.text, parsed.marks))
     expect(again).toEqual({ text: parsed.text, marks: parsed.marks })
+  })
+
+  it("parses a markdown link and serializes it back", () => {
+    const parsed = parseInlineMarkup("看 [文档](https://example.com/docs) 吧")
+    expect(parsed).toEqual({
+      text: "看 文档 吧",
+      marks: [{ type: "link", start: 2, end: 4, href: "https://example.com/docs" }],
+    })
+    expect(serializeInlineMarkup(parsed.text, parsed.marks)).toBe("看 [文档](https://example.com/docs) 吧")
+  })
+
+  it("renders a link and keeps bold nested inside it", () => {
+    const parsed = parseInlineMarkup("[**粗**](https://example.com/docs)")
+    expect(parsed.text).toBe("粗")
+    expect(renderInline(parsed.text, parsed.marks)).toEqual([
+      { text: "粗", marks: ["bold", "link"], href: "https://example.com/docs" },
+    ])
+    const again = parseInlineMarkup(serializeInlineMarkup(parsed.text, parsed.marks))
+    expect(again).toEqual({ text: parsed.text, marks: parsed.marks })
+  })
+
+  it("rejects javascript, data, and credential urls", () => {
+    expect(sanitizeLinkHref("javascript:alert(1)")).toBeNull()
+    expect(sanitizeLinkHref(" JaVaScRiPt:alert(1)")).toBeNull()
+    expect(sanitizeLinkHref("data:text/html,hi")).toBeNull()
+    expect(sanitizeLinkHref("https://user:pass@example.com/docs")).toBeNull()
+    const literal = parseInlineMarkup("[点](javascript:alert(1))")
+    expect(literal).toEqual({ text: "[点](javascript:alert(1))", marks: [] })
+    expect(setInlineLink("点我", [], 0, 2, "javascript:alert(1)")).toBeNull()
+    expect(normalizeMarks("点我", [{ type: "link", start: 0, end: 2, href: "javascript:alert(1)" }])).toEqual([])
+  })
+
+  it("adds, replaces, and removes a link", () => {
+    const added = setInlineLink("你好世界", [], 0, 2, "example.com")
+    expect(added).toEqual([{ type: "link", start: 0, end: 2, href: "https://example.com/" }])
+    const replaced = setInlineLink("你好世界", added ?? [], 0, 2, "https://folio.dev/docs")
+    expect(replaced).toEqual([{ type: "link", start: 0, end: 2, href: "https://folio.dev/docs" }])
+    expect(clearInlineLink("你好世界", replaced ?? [], 0, 2)).toEqual([])
+    expect(clearInlineLink("你好世界", replaced ?? [], 1, 1)).toEqual(replaced)
+  })
+
+  it("keeps the address when text around a link changes", () => {
+    const marks = [{ type: "link" as const, start: 1, end: 3, href: "https://example.com/docs" }]
+    expect(applyTextChange("abcd", marks, "Xabcd").marks).toEqual([
+      { type: "link", start: 2, end: 4, href: "https://example.com/docs" },
+    ])
+    const consumed = consumeInlineMarkup("见[文档](https://example.com/docs)", [])
+    expect(consumed.text).toBe("见文档")
+    expect(consumed.marks).toEqual([{ type: "link", start: 1, end: 3, href: "https://example.com/docs" }])
+    expect(mapCaret(consumed.map, "见[文档](https://example.com/docs)".length)).toBe("见文档".length)
+  })
+
+  it("splits and joins a link without dropping the address", () => {
+    const marks = [{ type: "link" as const, start: 0, end: 4, href: "https://example.com/docs" }]
+    const parts = splitInlineContent("你好世界", marks, 2, 2)
+    expect(parts.beforeMarks).toEqual([{ type: "link", start: 0, end: 2, href: "https://example.com/docs" }])
+    expect(parts.afterMarks).toEqual([{ type: "link", start: 0, end: 2, href: "https://example.com/docs" }])
+    expect(concatInline(parts.beforeText, parts.beforeMarks, parts.afterText, parts.afterMarks).marks).toEqual(marks)
   })
 })

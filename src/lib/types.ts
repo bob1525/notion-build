@@ -18,7 +18,7 @@ export type Visibility = "private" | "public"
 export type Role = "owner" | "member"
 export type CoverId = "" | "warm" | "mist" | "moss" | "ink" | "rose"
 
-export const INLINE_MARKS = ["bold", "italic", "code", "strike"] as const
+export const INLINE_MARKS = ["bold", "italic", "code", "strike", "link"] as const
 
 export type InlineMarkType = (typeof INLINE_MARKS)[number]
 
@@ -26,6 +26,7 @@ export type InlineMark = {
   type: InlineMarkType
   start: number
   end: number
+  href?: string
 }
 
 export const IMAGE_WIDTHS = ["small", "medium", "large"] as const

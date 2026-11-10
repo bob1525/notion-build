@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Image as ImageIcon,
   Italic,
+  Link2,
   List,
   ListOrdered,
   ListTodo,
@@ -22,7 +23,7 @@ import {
   Trash2,
   Type,
 } from "lucide-react"
-import { memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { blockTextClass, listMarker } from "@/components/block-style"
 import { CodeText } from "@/components/code-text"
@@ -45,7 +46,7 @@ import {
   unnestBlock,
   updateBlock,
 } from "@/lib/editor-state"
-import { applyTextChange, consumeInlineMarkup, mapCaret, marksAtCaret, marksCovering, toggleInlineMark } from "@/lib/rich-text"
+import { applyTextChange, clearInlineLink, consumeInlineMarkup, linkCovering, mapCaret, marksAtCaret, marksCovering, sanitizeLinkHref, setInlineLink, toggleInlineMark } from "@/lib/rich-text"
 import { matchBlockShortcut } from "@/lib/shortcuts"
 import type { BlockDTO, BlockType, InlineMarkType } from "@/lib/types"
 
@@ -69,6 +70,15 @@ type MenuState = {
   blockId: string
   query: string
   index: number
+}
+
+type LinkEditorState = {
+  blockId: string
+  start: number
+  end: number
+  value: string
+  error: string
+  savedHref: string
 }
 
 function autosize(element: HTMLTextAreaElement) {
@@ -139,6 +149,9 @@ export function BlockEditor({
   const [focusTick, setFocusTick] = useState(0)
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null)
   const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null)
+  const [linkEditor, setLinkEditor] = useState<LinkEditorState | null>(null)
+  const [linkBox, setLinkBox] = useState<{ left: number; top: number } | null>(null)
+  const linkInputRef = useRef<HTMLInputElement>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: "before" | "after" } | null>(null)
   const [toolbar, setToolbar] = useState<{ left: number; top: number } | null>(null)
   const dropRef = useRef(dropTarget)
@@ -211,6 +224,37 @@ export function BlockEditor({
     setCoords({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 300)), top })
   }, [menu, blocks])
 
+  useLayoutEffect(() => {
+    if (!linkEditor) {
+      setLinkBox(null)
+      return
+    }
+    const row = rowRefs.current.get(linkEditor.blockId)
+    if (!row) return
+    const rect = row.getBoundingClientRect()
+    setLinkBox({ left: Math.max(8, Math.min(rect.left, window.innerWidth - 300)), top: Math.max(8, rect.top - 92) })
+  }, [linkEditor, blocks])
+
+  const linkFocusKey = linkEditor ? `${linkEditor.blockId}:${linkEditor.start}:${linkEditor.end}` : ""
+  useEffect(() => {
+    if (!linkFocusKey) return
+    linkInputRef.current?.focus()
+    linkInputRef.current?.select()
+  }, [linkFocusKey])
+
+  useEffect(() => {
+    if (!linkEditor) return
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (document.getElementById("link-popover")?.contains(target)) return
+      if (target instanceof Element && target.closest("[data-testid='format-link']")) return
+      setLinkEditor(null)
+    }
+    document.addEventListener("mousedown", onPointer)
+    return () => document.removeEventListener("mousedown", onPointer)
+  }, [linkEditor])
+
   useEffect(() => {
     if (!menu) return
     const onPointer = (event: MouseEvent) => {
@@ -230,6 +274,56 @@ export function BlockEditor({
     if (pendingFormat.current?.blockId === blockId && next.start !== pendingFormat.current.caret) {
       pendingFormat.current = null
     }
+  }
+
+  function openLinkEditor(block: BlockDTO, start: number, end: number) {
+    const from = Math.min(start, end)
+    const to = Math.max(start, end)
+    const existing = linkCovering(block.marks, from, to)
+    setLinkEditor({
+      blockId: block.id,
+      start: from,
+      end: to,
+      value: existing?.href ?? "",
+      error: "",
+      savedHref: existing?.href ?? "",
+    })
+  }
+
+  function commitLink(event: FormEvent) {
+    event.preventDefault()
+    if (!linkEditor) return
+    const block = blocksRef.current.find((item) => item.id === linkEditor.blockId)
+    if (!block) {
+      setLinkEditor(null)
+      return
+    }
+    if (!linkEditor.value.trim()) {
+      setLinkEditor({ ...linkEditor, error: "先填上链接地址" })
+      return
+    }
+    const next = setInlineLink(block.content, block.marks, linkEditor.start, linkEditor.end, linkEditor.value)
+    if (!next) {
+      setLinkEditor({ ...linkEditor, error: "只接受 http 或 https 链接" })
+      return
+    }
+    onChange(updateBlock(blocksRef.current, block.id, { marks: next }))
+    const { blockId, start, end } = linkEditor
+    setLinkEditor(null)
+    focusBlock(blockId, end, start)
+  }
+
+  function removeLink() {
+    if (!linkEditor) return
+    const block = blocksRef.current.find((item) => item.id === linkEditor.blockId)
+    if (!block) {
+      setLinkEditor(null)
+      return
+    }
+    onChange(updateBlock(blocksRef.current, block.id, { marks: clearInlineLink(block.content, block.marks, linkEditor.start, linkEditor.end) }))
+    const { blockId, start, end } = linkEditor
+    setLinkEditor(null)
+    focusBlock(blockId, end, start)
   }
 
   function applyMark(block: BlockDTO, type: InlineMarkType, start: number, end: number) {
@@ -510,6 +604,19 @@ export function BlockEditor({
                       const activeIndex = menuView.current.activeIndex
                       const formatItems = menuView.current.formatItems
                       const commands = menuView.current.commands
+                      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k" && block.type !== "code") {
+                        const start = input.selectionStart
+                        const end = input.selectionEnd
+                        const inside = linkCovering(block.marks, start, end)
+                        if (start !== end || inside) {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          const from = inside && start === end ? inside.start : Math.min(start, end)
+                          const to = inside && start === end ? inside.end : Math.max(start, end)
+                          openLinkEditor(block, from, to)
+                          return
+                        }
+                      }
                       if ((event.metaKey || event.ctrlKey) && !event.altKey && block.type !== "code") {
                         const key = event.key.toLowerCase()
                         const mark: InlineMarkType | null = key === "b" ? "bold" : key === "i" ? "italic" : key === "e" ? "code" : event.shiftKey && key === "x" ? "strike" : null
@@ -754,7 +861,69 @@ export function BlockEditor({
                   </button>
                 )
               })}
+              {(() => {
+                const block = blocks.find((item) => item.id === selection.blockId)
+                const linked = Boolean(block && linkCovering(block.marks, selection.start, selection.end))
+                return (
+                  <button
+                    type="button"
+                    data-testid="format-link"
+                    aria-pressed={linked}
+                    className={cn("rounded px-2 py-1 text-sm hover:bg-black/[0.06]", linked && "bg-black/[0.08]")}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      if (block && block.type !== "code") openLinkEditor(block, selection.start, selection.end)
+                    }}
+                  >
+                    <Link2 size={14} />
+                  </button>
+                )
+              })()}
             </div>,
+            document.body,
+          )
+        : null}
+      {linkEditor
+        ? createPortal(
+            <form
+              id="link-popover"
+              data-testid="link-popover"
+              onSubmit={commitLink}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setLinkEditor(null)
+                }
+                if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }
+              }}
+              className="fixed z-50 w-[280px] rounded-lg bg-white p-2 shadow-pop"
+              style={{ left: linkBox?.left ?? 16, top: linkBox?.top ?? 16 }}
+            >
+              <label className="block text-xs text-muted" htmlFor="link-url-input">链接地址</label>
+              <input
+                id="link-url-input"
+                ref={linkInputRef}
+                data-testid="link-url"
+                value={linkEditor.value}
+                onChange={(event) => setLinkEditor({ ...linkEditor, value: event.target.value, error: "" })}
+                placeholder="https://"
+                className="mt-1 w-full rounded-md border border-black/10 px-2 py-1 text-sm outline-none focus:border-black/30"
+              />
+              {linkEditor.error ? <p data-testid="link-error" className="mt-1 text-xs leading-5 text-danger">{linkEditor.error}</p> : null}
+              <div className="mt-2 flex items-center gap-1">
+                <button type="submit" data-testid="link-apply" className="rounded-md bg-ink px-2 py-1 text-xs text-white">应用</button>
+                {linkEditor.savedHref ? (
+                  <button type="button" data-testid="link-remove" onClick={removeLink} className="rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]">移除</button>
+                ) : null}
+                {sanitizeLinkHref(linkEditor.savedHref) ? (
+                  <a data-testid="link-open" href={sanitizeLinkHref(linkEditor.savedHref) ?? undefined} target="_blank" rel="noopener noreferrer" className="ml-auto text-xs underline">打开</a>
+                ) : null}
+              </div>
+            </form>,
             document.body,
           )
         : null}

@@ -46,4 +46,14 @@ describe("markdown", () => {
     expect(markdownToBlocks("  \n\n")).toEqual([])
     expect(blocksToMarkdown([])).toBe("")
   })
+
+  it("round-trips a paragraph link and leaves a javascript url as text", () => {
+    const blocks = markdownToBlocks("看 [文档](https://example.com/docs)\n")
+    expect(blocks[0].content).toBe("看 文档")
+    expect(blocks[0].marks).toEqual([{ type: "link", start: 2, end: 4, href: "https://example.com/docs" }])
+    expect(blocksToMarkdown(blocks)).toBe("看 [文档](https://example.com/docs)\n")
+    const unsafe = markdownToBlocks("[点](javascript:alert(1))\n")
+    expect(unsafe[0].content).toBe("[点](javascript:alert(1))")
+    expect(unsafe[0].marks).toEqual([])
+  })
 })

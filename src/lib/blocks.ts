@@ -6,6 +6,7 @@ export const inlineMarkSchema = z.object({
   type: z.enum(INLINE_MARKS),
   start: z.number().int().nonnegative(),
   end: z.number().int().nonnegative(),
+  href: z.string().max(2000).optional(),
 })
 
 export const blockInputSchema = z.object({
@@ -63,6 +64,7 @@ function sameMarks(left: InlineMark[], right: InlineMark[]) {
   if (left.length !== right.length) return false
   for (let index = 0; index < left.length; index += 1) {
     if (left[index].type !== right[index].type || left[index].start !== right[index].start || left[index].end !== right[index].end) return false
+    if ((left[index].href ?? "") !== (right[index].href ?? "")) return false
   }
   return true
 }

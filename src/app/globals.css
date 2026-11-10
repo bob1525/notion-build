@@ -47,6 +47,12 @@ textarea {
   background: rgba(55, 53, 47, 0.08);
 }
 
+.inline-link {
+  color: #245bdb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 textarea.rich-input::placeholder {
   color: #a39e98;
 }
