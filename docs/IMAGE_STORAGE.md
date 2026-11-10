@@ -111,4 +111,4 @@ Vercel、以及别的没有持久磁盘的运行时，不能靠 `public/uploads`
 
 签名对照的是 AWS 公开示例，不是连上一个真实的桶。mock 能证明后端选择和请求形状，不能证明某家供应商的额外请求头。
 
-分支头的 GitHub Actions 链接补在下一节。
+GitHub Actions 上 [42869896529](https://github.com/bob1525/notion-build/actions/runs/42869896529) 通过。lint、typecheck 和 96 个单元测试通过，50 个端到端通过，Playwright 用时 6.9 分钟。同一提交的 push 运行 [42869882747](https://github.com/bob1525/notion-build/actions/runs/42869882747) 也通过。
