@@ -66,7 +66,7 @@ test("adds, edits, opens, and removes a link", async ({ page }) => {
 
   const again = page.getByTestId("block-input").first()
   await selectText(again, 2, 4)
-  await page.keyboard.press("Control+k")
+  await again.press("Control+k")
   await expect(page.getByTestId("search-input")).toHaveCount(0)
   await expect(page.getByTestId("link-url")).toHaveValue("http://127.0.0.1:3000/login")
   await page.getByTestId("link-url").fill("http://127.0.0.1:3000/share/page_welcome")
