@@ -31,6 +31,19 @@ textarea {
   caret-color: #37352f;
 }
 
+.inline-bold {
+  text-shadow: 0.45px 0 currentColor, -0.45px 0 currentColor;
+}
+
+.inline-code {
+  border-radius: 4px;
+  background: rgba(55, 53, 47, 0.08);
+}
+
+textarea.rich-input::placeholder {
+  color: #a39e98;
+}
+
 .cover-warm {
   background: linear-gradient(115deg, #f6e6d8 0%, #f3d2c4 46%, #e7eef8 100%);
 }

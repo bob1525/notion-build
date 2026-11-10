@@ -2,6 +2,8 @@ import "server-only"
 import bcrypt from "bcryptjs"
 import { z } from "zod"
 import { blockInputSchema, normalizeBlocks } from "@/lib/blocks"
+import { normalizeMarks } from "@/lib/rich-text"
+import type { InlineMark } from "@/lib/types"
 import { prisma } from "@/lib/db"
 import { asBlockType, asCover, asRole, asVisibility, clampIcon, cleanTitle, displayTitle, pickWorkspaceId } from "@/lib/format"
 import { canDeletePage, canManageVisibility, canViewPage } from "@/lib/permissions"
@@ -44,22 +46,35 @@ export const updatePageSchema = z.object({
   blocks: z.array(blockInputSchema).max(400),
 })
 
+function readMarks(value: string, content: string): InlineMark[] {
+  try {
+    const parsed = JSON.parse(value) as InlineMark[]
+    if (!Array.isArray(parsed)) return []
+    return normalizeMarks(content, parsed)
+  } catch {
+    return []
+  }
+}
+
 function toBlock(block: {
   id: string
   type: string
   content: string
+  marks: string
   checked: boolean
   language: string
   position: number
 }): BlockDTO {
   const type = asBlockType(block.type)
+  const content = type === "divider" ? "" : block.content
   return {
     id: block.id,
     type,
-    content: type === "divider" ? "" : block.content,
+    content,
     checked: type === "todo" ? block.checked : false,
     language: type === "code" ? block.language.trim().toLowerCase() : "",
     position: block.position,
+    marks: type === "divider" || type === "code" ? [] : readMarks(block.marks ?? "[]", content),
   }
 }
 
@@ -305,6 +320,7 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
           content: block.content,
           checked: block.checked,
           language: block.language,
+          marks: JSON.stringify(block.marks ?? []),
           position: block.position,
         })),
       })

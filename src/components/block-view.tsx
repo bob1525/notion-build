@@ -1,4 +1,5 @@
 import { blockTextClass, listMarker } from "@/components/block-style"
+import { InlineText } from "@/components/inline-text"
 import { cn } from "@/lib/cn"
 import type { BlockDTO } from "@/lib/types"
 
@@ -25,7 +26,7 @@ export function BlockView({ blocks }: { blocks: BlockDTO[] }) {
             ) : null}
             {marker ? <span className="w-6 shrink-0 text-right text-muted">{marker}</span> : null}
             <div className={cn("min-w-0 flex-1 whitespace-pre-wrap break-words", block.checked && "text-muted line-through")}>
-              {block.content || " "}
+              {block.content ? <InlineText text={block.content} marks={block.marks} /> : " "}
             </div>
           </div>
         )

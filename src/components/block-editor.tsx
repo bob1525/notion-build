@@ -3,23 +3,27 @@
 import {
   ArrowDown,
   ArrowUp,
+  Bold,
   Code,
   GripVertical,
   Heading1,
   Heading2,
   Heading3,
+  Italic,
   List,
   ListOrdered,
   ListTodo,
   Minus,
   Plus,
+  Strikethrough,
   Trash2,
   Type,
 } from "lucide-react"
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { blockTextClass, listMarker } from "@/components/block-style"
-import { CODE_LANGUAGES, filterCommands, SLASH_COMMANDS, type SlashCommand } from "@/lib/constants"
+import { InlineText } from "@/components/inline-text"
+import { CODE_LANGUAGES, filterCommands, filterFormatCommands, SLASH_COMMANDS, type SlashCommand } from "@/lib/constants"
 import { createBlock } from "@/lib/blocks"
 import { cn } from "@/lib/cn"
 import {
@@ -27,12 +31,14 @@ import {
   insertBlockAfter,
   moveBlock,
   removeBlock,
+  reorderBlocks,
   setBlockType,
   splitBlock,
   updateBlock,
 } from "@/lib/editor-state"
+import { applyTextChange, consumeInlineMarkup, mapCaret, marksAtCaret, marksCovering, toggleInlineMark } from "@/lib/rich-text"
 import { matchBlockShortcut } from "@/lib/shortcuts"
-import type { BlockDTO, BlockType } from "@/lib/types"
+import type { BlockDTO, BlockType, InlineMarkType } from "@/lib/types"
 
 const ICONS: Record<BlockType, typeof Type> = {
   paragraph: Type,
@@ -85,21 +91,41 @@ export function BlockEditor({
 }) {
   const inputRefs = useRef(new Map<string, HTMLTextAreaElement>())
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
-  const pendingCaret = useRef<{ id: string; caret: number } | null>(null)
+  const pendingCaret = useRef<{ id: string; caret: number; anchor?: number } | null>(null)
   const composing = useRef(false)
+  const blocksRef = useRef(blocks)
+  const dragSource = useRef<string | null>(null)
+  const pendingFormat = useRef<{ blockId: string; marks: InlineMarkType[]; caret: number } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [activeId, setActiveId] = useState<string | null>(blocks[0]?.id ?? null)
   const [focusTick, setFocusTick] = useState(0)
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null)
+  const [selection, setSelection] = useState<{ blockId: string; start: number; end: number } | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; placement: "before" | "after" } | null>(null)
+  const [toolbar, setToolbar] = useState<{ left: number; top: number } | null>(null)
+  const dropRef = useRef(dropTarget)
+  blocksRef.current = blocks
+  dropRef.current = dropTarget
 
-  const focusBlock = (id: string, caret: number) => {
-    pendingCaret.current = { id, caret }
+  const focusBlock = (id: string, caret: number, anchor = caret) => {
+    pendingCaret.current = { id, caret, anchor }
     setFocusTick((value) => value + 1)
   }
 
   useLayoutEffect(() => {
     inputRefs.current.forEach((element) => autosize(element))
   }, [blocks])
+
+  useLayoutEffect(() => {
+    if (!selection || selection.start === selection.end) {
+      setToolbar(null)
+      return
+    }
+    const row = rowRefs.current.get(selection.blockId)
+    if (!row) return
+    const rect = row.getBoundingClientRect()
+    setToolbar({ left: Math.max(8, rect.left), top: Math.max(8, rect.top - 42) })
+  }, [selection, blocks])
 
   useLayoutEffect(() => {
     const pending = pendingCaret.current
@@ -109,7 +135,8 @@ export function BlockEditor({
     if (input) {
       input.focus()
       const caret = Math.max(0, Math.min(pending.caret, input.value.length))
-      input.setSelectionRange(caret, caret)
+      const anchor = Math.max(0, Math.min(pending.anchor ?? caret, input.value.length))
+      input.setSelectionRange(anchor, caret)
       autosize(input)
       return
     }
@@ -123,8 +150,10 @@ export function BlockEditor({
     },
   }), [blocks])
 
+  const formatItems = menu?.kind === "slash" ? filterFormatCommands(menu.query) : []
   const commands = menu?.kind === "slash" ? filterCommands(menu.query) : SLASH_COMMANDS
-  const activeIndex = menu ? Math.min(menu.index, Math.max(commands.length - 1, 0)) : 0
+  const menuCount = formatItems.length + commands.length
+  const activeIndex = menu ? Math.min(menu.index, Math.max(menuCount - 1, 0)) : 0
 
   useLayoutEffect(() => {
     if (!menu) {
@@ -151,6 +180,52 @@ export function BlockEditor({
     document.addEventListener("mousedown", onPointer)
     return () => document.removeEventListener("mousedown", onPointer)
   }, [menu])
+
+  function rememberSelection(blockId: string, input: HTMLTextAreaElement) {
+    const next = { blockId, start: input.selectionStart, end: input.selectionEnd }
+    setSelection(next)
+    if (pendingFormat.current?.blockId === blockId && next.start !== pendingFormat.current.caret) {
+      pendingFormat.current = null
+    }
+  }
+
+  function applyMark(block: BlockDTO, type: InlineMarkType, start: number, end: number) {
+    if (start === end) {
+      const current = pendingFormat.current?.blockId === block.id ? pendingFormat.current.marks : marksAtCaret(block.marks, start)
+      const marks = current.includes(type) ? current.filter((item) => item !== type) : [...current, type]
+      pendingFormat.current = { blockId: block.id, marks, caret: start }
+      setSelection({ blockId: block.id, start, end })
+      return
+    }
+    onChange(updateBlock(blocksRef.current, block.id, { marks: toggleInlineMark(block.content, block.marks, start, end, type) }))
+    focusBlock(block.id, end, start)
+  }
+
+  function applyFormatCommand(type: InlineMarkType) {
+    if (!menu) return
+    const block = blocksRef.current.find((item) => item.id === menu.blockId)
+    if (!block) return
+    const content = block.content.startsWith("/") ? "" : block.content
+    onChange(updateBlock(blocksRef.current, block.id, { content, marks: content ? block.marks : [] }))
+    pendingFormat.current = { blockId: block.id, marks: [type], caret: content.length }
+    focusBlock(block.id, content.length)
+    setMenu(null)
+  }
+
+  function updateDrop(clientX: number, clientY: number) {
+    const element = document.elementFromPoint(clientX, clientY)
+    const row = element?.closest<HTMLElement>("[data-block-id]")
+    const id = row?.dataset.blockId
+    if (!row || !id || id === dragSource.current) {
+      dropRef.current = null
+      setDropTarget(null)
+      return
+    }
+    const rect = row.getBoundingClientRect()
+    const next = { id, placement: (clientY < rect.top + rect.height / 2 ? "before" : "after") as "before" | "after" }
+    dropRef.current = next
+    setDropTarget(next)
+  }
 
   function choose(type: BlockType) {
     if (!menu) return
@@ -182,10 +257,13 @@ export function BlockEditor({
               else rowRefs.current.delete(block.id)
             }}
             data-testid="block"
+            data-block-id={block.id}
             data-block-type={block.type}
             className="group relative py-[2px]"
             onFocus={() => setActiveId(block.id)}
           >
+            {dropTarget?.id === block.id && dropTarget.placement === "before" ? <div data-testid="drop-indicator" className="absolute inset-x-0 top-0 z-10 h-0.5 bg-sky-600" /> : null}
+            {dropTarget?.id === block.id && dropTarget.placement === "after" ? <div data-testid="drop-indicator" className="absolute inset-x-0 bottom-0 z-10 h-0.5 bg-sky-600" /> : null}
             <div
               className={cn(
                 "items-center gap-0.5 sm:absolute sm:-left-14 sm:top-1 sm:transition-opacity",
@@ -204,11 +282,44 @@ export function BlockEditor({
               </button>
               <button
                 type="button"
-                aria-label="块操作"
-                data-testid="block-menu"
-                className="rounded p-1 text-faint hover:bg-black/[0.06] hover:text-ink"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setMenu({ kind: "actions", blockId: block.id, query: "", index: 0 })}
+                aria-label="拖拽排序"
+                data-testid="block-drag"
+                className="cursor-grab touch-none rounded p-1 text-faint hover:bg-black/[0.06] hover:text-ink active:cursor-grabbing"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  const sourceId = block.id
+                  dragSource.current = sourceId
+                  const startX = event.clientX
+                  const startY = event.clientY
+                  const pointerId = event.pointerId
+                  let moved = false
+                  document.body.style.userSelect = "none"
+                  const move = (ev: PointerEvent) => {
+                    if (ev.pointerId !== pointerId) return
+                    if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
+                    moved = true
+                    updateDrop(ev.clientX, ev.clientY)
+                  }
+                  const up = (ev: PointerEvent) => {
+                    if (ev.pointerId !== pointerId) return
+                    window.removeEventListener("pointermove", move)
+                    window.removeEventListener("pointerup", up)
+                    dragSource.current = null
+                    document.body.style.userSelect = ""
+                    if (!moved) {
+                      dropRef.current = null
+                      setDropTarget(null)
+                      setMenu({ kind: "actions", blockId: sourceId, query: "", index: 0 })
+                      return
+                    }
+                    const target = dropRef.current
+                    dropRef.current = null
+                    setDropTarget(null)
+                    if (target) onChange(reorderBlocks(blocksRef.current, sourceId, target.id, target.placement))
+                  }
+                  window.addEventListener("pointermove", move)
+                  window.addEventListener("pointerup", up)
+                }}
               >
                 <GripVertical size={15} />
               </button>
@@ -269,6 +380,12 @@ export function BlockEditor({
                       </select>
                     </label>
                   ) : null}
+                  <div className="grid">
+                  {block.type !== "code" ? (
+                    <div aria-hidden className={cn(blockTextClass(block.type), "pointer-events-none col-start-1 row-start-1 whitespace-pre-wrap break-words text-ink", block.checked && "text-muted line-through")}>
+                      {block.content ? <InlineText text={block.content} marks={block.marks} /> : <span className="opacity-0">.</span>}
+                    </div>
+                  ) : null}
                   <textarea
                     ref={(node) => {
                       if (node) inputRefs.current.set(block.id, node)
@@ -281,6 +398,9 @@ export function BlockEditor({
                     placeholder={placeholderFor(block, active)}
                     aria-label={placeholderFor(block, true) || "块内容"}
                     onFocus={() => setActiveId(block.id)}
+                    onSelect={(event) => rememberSelection(block.id, event.currentTarget)}
+                    onKeyUp={(event) => rememberSelection(block.id, event.currentTarget)}
+                    onMouseUp={(event) => rememberSelection(block.id, event.currentTarget)}
                     onCompositionStart={() => {
                       composing.current = true
                     }}
@@ -288,9 +408,24 @@ export function BlockEditor({
                       composing.current = false
                     }}
                     onChange={(event) => {
-                      const value = event.target.value
-                      autosize(event.target)
-                      onChange(updateBlock(blocks, block.id, { content: value }))
+                      const input = event.target
+                      const value = input.value
+                      autosize(input)
+                      if (block.type === "code") {
+                        onChange(updateBlock(blocks, block.id, { content: value }))
+                      } else {
+                        const typing = pendingFormat.current?.blockId === block.id ? pendingFormat.current.marks : []
+                        const changed = applyTextChange(block.content, block.marks, value, typing)
+                        const consumed = consumeInlineMarkup(changed.text, changed.marks)
+                        onChange(updateBlock(blocks, block.id, { content: consumed.text, marks: consumed.marks }))
+                        if (consumed.text !== changed.text) {
+                          const caret = mapCaret(consumed.map, input.selectionStart)
+                          focusBlock(block.id, caret)
+                          if (pendingFormat.current?.blockId === block.id) pendingFormat.current = { ...pendingFormat.current, caret }
+                        } else if (pendingFormat.current?.blockId === block.id) {
+                          pendingFormat.current = { ...pendingFormat.current, caret: input.selectionStart }
+                        }
+                      }
                       if (block.type !== "code" && value.startsWith("/") && !value.includes("\n")) {
                         setMenu({ kind: "slash", blockId: block.id, query: value.slice(1), index: 0 })
                       } else if (menu?.kind === "slash" && menu.blockId === block.id) {
@@ -300,6 +435,15 @@ export function BlockEditor({
                     onKeyDown={(event) => {
                       if (event.nativeEvent.isComposing || composing.current) return
                       const input = event.currentTarget
+                      if ((event.metaKey || event.ctrlKey) && !event.altKey && block.type !== "code") {
+                        const key = event.key.toLowerCase()
+                        const mark: InlineMarkType | null = key === "b" ? "bold" : key === "i" ? "italic" : key === "e" ? "code" : event.shiftKey && key === "x" ? "strike" : null
+                        if (mark) {
+                          event.preventDefault()
+                          applyMark(block, mark, input.selectionStart, input.selectionEnd)
+                          return
+                        }
+                      }
                       if (menu?.blockId === block.id && (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === "Tab" || event.key === "Escape")) {
                         if (event.key === "ArrowDown") {
                           event.preventDefault()
@@ -316,9 +460,10 @@ export function BlockEditor({
                           setMenu(null)
                           return
                         }
-                        if ((event.key === "Enter" || event.key === "Tab") && commands[activeIndex]) {
+                        if (event.key === "Enter" || event.key === "Tab") {
                           event.preventDefault()
-                          choose(commands[activeIndex].type)
+                          if (activeIndex < formatItems.length) applyFormatCommand(formatItems[activeIndex].id)
+                          else if (commands[activeIndex - formatItems.length]) choose(commands[activeIndex - formatItems.length].type)
                           return
                         }
                       }
@@ -353,6 +498,13 @@ export function BlockEditor({
                       if (event.key === "Enter" && !event.shiftKey && block.type !== "code") {
                         event.preventDefault()
                         const result = splitBlock(blocks, block.id, input.selectionStart, input.selectionEnd)
+                        onChange(result.blocks)
+                        focusBlock(result.focusId, result.caret)
+                        return
+                      }
+                      if (block.type === "code" && event.key === "Enter" && input.value === "") {
+                        event.preventDefault()
+                        const result = splitBlock(blocks, block.id, 0, 0)
                         onChange(result.blocks)
                         focusBlock(result.focusId, result.caret)
                         return
@@ -395,10 +547,11 @@ export function BlockEditor({
                     }}
                     className={cn(
                       blockTextClass(block.type),
-                      block.type === "code" && "px-3 pb-2.5",
+                      block.type === "code" ? "px-3 pb-2.5" : "rich-input col-start-1 row-start-1 text-transparent caret-ink",
                       block.checked && "text-muted line-through",
                     )}
                   />
+                  </div>
                 </div>
               </div>
             )}
@@ -413,14 +566,35 @@ export function BlockEditor({
               className="fixed z-50 max-h-[340px] w-[280px] overflow-auto rounded-lg bg-white py-1 shadow-pop"
               style={{ left: coords.left, top: coords.top }}
             >
-              <div className="px-3 py-1.5 text-[11px] font-medium text-faint">{menu.kind === "slash" ? "插入块" : "转换成"}</div>
-              {commands.length === 0 ? <div className="px-3 py-2 text-sm text-muted">没有匹配的块</div> : null}
+              <div className="px-3 py-1.5 text-[11px] font-medium text-faint">{menu.kind === "slash" ? "格式与块" : "转换成"}</div>
+              {menuCount === 0 ? <div className="px-3 py-2 text-sm text-muted">没有匹配的块</div> : null}
+              {menu.kind === "slash"
+                ? formatItems.map((command, commandIndex) => (
+                    <button
+                      key={command.id}
+                      type="button"
+                      data-testid={`slash-format-${command.id}`}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setMenu({ ...menu, index: commandIndex })}
+                      onClick={() => applyFormatCommand(command.id)}
+                      className={cn("flex w-full items-center gap-2 px-2 py-1.5 text-left", commandIndex === activeIndex && "bg-black/[0.05]")}
+                    >
+                      <span className="flex h-8 w-8 items-center justify-center rounded-md border border-black/[0.06] bg-cream text-ink">
+                        {command.id === "bold" ? <Bold size={15} /> : command.id === "italic" ? <Italic size={15} /> : command.id === "strike" ? <Strikethrough size={15} /> : <Code size={15} />}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm">{command.label}</span>
+                        <span className="block text-xs text-muted">{command.hint}</span>
+                      </span>
+                    </button>
+                  ))
+                : null}
               {commands.map((command, commandIndex) => (
                 <CommandRow
                   key={command.type}
                   command={command}
-                  active={commandIndex === activeIndex}
-                  onHover={() => setMenu({ ...menu, index: commandIndex })}
+                  active={commandIndex + formatItems.length === activeIndex}
+                  onHover={() => setMenu({ ...menu, index: commandIndex + formatItems.length })}
                   onSelect={() => choose(command.type)}
                 />
               ))}
@@ -441,6 +615,33 @@ export function BlockEditor({
                   />
                 </div>
               ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
+      {selection && selection.start !== selection.end && toolbar
+        ? createPortal(
+            <div data-testid="format-toolbar" className="fixed z-40 flex gap-0.5 rounded-lg bg-white p-1 shadow-pop" style={{ left: toolbar.left, top: toolbar.top }}>
+              {(["bold", "italic", "code", "strike"] as InlineMarkType[]).map((type) => {
+                const block = blocks.find((item) => item.id === selection.blockId)
+                const active = block ? marksCovering(block.marks, selection.start, selection.end).includes(type) : false
+                const Icon = type === "bold" ? Bold : type === "italic" ? Italic : type === "strike" ? Strikethrough : Code
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    data-testid={`format-${type}`}
+                    aria-pressed={active}
+                    className={cn("rounded px-2 py-1 text-sm hover:bg-black/[0.06]", active && "bg-black/[0.08]")}
+                    onMouseDown={(event) => {
+                      event.preventDefault()
+                      if (block && block.type !== "code") applyMark(block, type, selection.start, selection.end)
+                    }}
+                  >
+                    <Icon size={14} />
+                  </button>
+                )
+              })}
             </div>,
             document.body,
           )

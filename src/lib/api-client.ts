@@ -22,7 +22,7 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function pagePayload(
   meta: { title: string; icon: string; cover: string; visibility: string; pinned: boolean },
-  blocks: Array<{ id: string; type: string; content: string; checked: boolean; language: string }>,
+  blocks: Array<{ id: string; type: string; content: string; checked: boolean; language: string; marks?: unknown }>,
 ) {
   return {
     title: meta.title,
@@ -30,12 +30,13 @@ export function pagePayload(
     cover: meta.cover,
     visibility: meta.visibility,
     pinned: meta.pinned,
-    blocks: blocks.map(({ id, type, content, checked, language }) => ({
+    blocks: blocks.map(({ id, type, content, checked, language, marks }) => ({
       id,
       type,
       content,
       checked,
       language,
+      marks: marks ?? [],
     })),
   }
 }

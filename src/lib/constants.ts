@@ -1,4 +1,4 @@
-import type { BlockType, CoverId } from "@/lib/types"
+import type { BlockType, CoverId, InlineMarkType } from "@/lib/types"
 
 export type SlashCommand = {
   type: BlockType
@@ -19,6 +19,19 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { type: "code", label: "代码", hint: "等宽代码块", keywords: "code snippet 代码", group: "高级" },
   { type: "divider", label: "分割线", hint: "把内容隔开", keywords: "divider hr line 分割 分隔", group: "高级" },
 ]
+
+export const FORMAT_COMMANDS: Array<{ id: InlineMarkType; label: string; hint: string; keywords: string }> = [
+  { id: "bold", label: "加粗", hint: "⌘B", keywords: "bold strong 加粗 粗体" },
+  { id: "italic", label: "斜体", hint: "⌘I", keywords: "italic em 斜体" },
+  { id: "code", label: "行内代码", hint: "⌘E", keywords: "inline 行内代码 行内" },
+  { id: "strike", label: "删除线", hint: "⌘⇧X", keywords: "strike strikethrough 删除线 划线" },
+]
+
+export function filterFormatCommands(query: string) {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return FORMAT_COMMANDS
+  return FORMAT_COMMANDS.filter((command) => `${command.label} ${command.hint} ${command.keywords}`.toLowerCase().includes(needle))
+}
 
 export function filterCommands(query: string) {
   const needle = query.trim().toLowerCase()

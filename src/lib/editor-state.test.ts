@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createBlock } from "@/lib/blocks"
-import { backspaceAtStart, moveBlock, removeBlock, setBlockType, splitBlock } from "@/lib/editor-state"
+import { backspaceAtStart, moveBlock, removeBlock, reorderBlocks, setBlockType, splitBlock } from "@/lib/editor-state"
 import type { BlockDTO } from "@/lib/types"
 
 function paragraph(id: string, content: string, type: BlockDTO["type"] = "paragraph"): BlockDTO {
@@ -19,11 +19,12 @@ describe("editor state", () => {
     expect(next.blocks.map((block) => block.type)).toEqual(["bulleted", "bulleted"])
   })
 
-  it("turns an empty list item back into a paragraph", () => {
+  it("creates another block of the same type when Enter is pressed in an empty block", () => {
     const blocks = [paragraph("a", "", "todo")]
-    const result = splitBlock(blocks, "a", 0, 0)
-    expect(result.blocks[0].type).toBe("paragraph")
-    expect(result.focusId).toBe("a")
+    const result = splitBlock(blocks, "a", 0, 0, { createId: () => "b" })
+    expect(result.blocks.map((block) => block.type)).toEqual(["todo", "todo"])
+    expect(result.focusId).toBe("b")
+    expect(result.caret).toBe(0)
   })
 
   it("merges into the previous block, and steps a heading back to text first", () => {
@@ -52,6 +53,29 @@ describe("editor state", () => {
     const typed = setBlockType(blocks, "a", "code", { content: "const n = 1" })
     expect(typed[0]).toMatchObject({ type: "code", content: "const n = 1" })
     expect(setBlockType(blocks, "a", "divider")[0].content).toBe("")
+  })
+
+  it("reorders a sibling before or after another block", () => {
+    const blocks = [paragraph("a", "甲"), paragraph("b", "乙"), paragraph("c", "丙")]
+    expect(reorderBlocks(blocks, "c", "a", "before").map((block) => block.content)).toEqual(["丙", "甲", "乙"])
+    expect(reorderBlocks(blocks, "a", "c", "after").map((block) => block.content)).toEqual(["乙", "丙", "甲"])
+    expect(reorderBlocks(blocks, "c", "b", "before").map((block) => block.content)).toEqual(["甲", "丙", "乙"])
+    expect(reorderBlocks(blocks, "a", "a", "after")).toBe(blocks)
+  })
+
+  it("keeps inline marks when two blocks merge", () => {
+    const left = paragraph("a", "甲乙")
+    left.marks = [{ type: "bold", start: 0, end: 1 }]
+    const right = paragraph("b", "丙")
+    right.marks = [{ type: "italic", start: 0, end: 1 }]
+    const merged = backspaceAtStart([left, right], "b")
+    expect(merged?.blocks).toHaveLength(1)
+    expect(merged?.blocks[0].content).toBe("甲乙丙")
+    expect(merged?.blocks[0].marks).toEqual([
+      { type: "bold", start: 0, end: 1 },
+      { type: "italic", start: 2, end: 3 },
+    ])
+    expect(merged?.caret).toBe(2)
   })
 
   it("inserts a paragraph after a code block instead of splitting the fence", () => {

@@ -72,6 +72,7 @@ model Block {
   pageId   String
   type     String
   content  String  @default("")
+  marks    String  @default("[]")
   checked  Boolean @default(false)
   language String  @default("")
   position Int     @default(0)

@@ -1,7 +1,8 @@
 import { createBlock } from "@/lib/blocks"
+import { parseInlineMarkup, serializeInlineMarkup } from "@/lib/rich-text"
 import type { BlockDTO, BlockType } from "@/lib/types"
 
-type MarkdownBlock = Pick<BlockDTO, "type" | "content" | "checked" | "language">
+type MarkdownBlock = Pick<BlockDTO, "type" | "content" | "checked" | "language" | "marks">
 
 function isFenceClose(line: string) {
   return /^```\s*$/.test(line)
@@ -23,24 +24,25 @@ export function blocksToMarkdown(blocks: MarkdownBlock[]) {
     if (block.type === "numbered") numberedRun += 1
     else numberedRun = 0
     if (index > 0) lines.push("")
+    const text = block.type === "code" || block.type === "divider" ? block.content : serializeInlineMarkup(block.content, block.marks ?? [])
     switch (block.type) {
       case "heading1":
-        lines.push(`# ${block.content}`)
+        lines.push(`# ${text}`)
         break
       case "heading2":
-        lines.push(`## ${block.content}`)
+        lines.push(`## ${text}`)
         break
       case "heading3":
-        lines.push(`### ${block.content}`)
+        lines.push(`### ${text}`)
         break
       case "bulleted":
-        lines.push(`- ${block.content}`)
+        lines.push(`- ${text}`)
         break
       case "numbered":
-        lines.push(`${numberedRun}. ${block.content}`)
+        lines.push(`${numberedRun}. ${text}`)
         break
       case "todo":
-        lines.push(`- [${block.checked ? "x" : " "}] ${block.content}`)
+        lines.push(`- [${block.checked ? "x" : " "}] ${text}`)
         break
       case "code":
         lines.push(`\`\`\`${block.language || ""}`)
@@ -51,7 +53,7 @@ export function blocksToMarkdown(blocks: MarkdownBlock[]) {
         lines.push("---")
         break
       default:
-        lines.push(block.content)
+        lines.push(text)
     }
   })
   const text = lines.join("\n").trim()
@@ -64,10 +66,13 @@ export function markdownToBlocks(markdown: string): BlockDTO[] {
   let index = 0
 
   const push = (partial: { type: BlockType; content?: string; checked?: boolean; language?: string }) => {
+    const raw = partial.content ?? ""
+    const inline = partial.type === "code" || partial.type === "divider" ? { text: raw, marks: [] } : parseInlineMarkup(raw)
     blocks.push(
       createBlock({
         type: partial.type,
-        content: partial.content ?? "",
+        content: inline.text,
+        marks: inline.marks,
         checked: partial.checked ?? false,
         language: partial.language ?? "",
         position: blocks.length,

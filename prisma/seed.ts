@@ -10,6 +10,7 @@ type BlockSeed = {
   content?: string
   checked?: boolean
   language?: string
+  marks?: Array<{ type: "bold" | "italic" | "code" | "strike"; start: number; end: number }>
 }
 
 function hoursAgo(hours: number) {
@@ -22,6 +23,7 @@ function blocks(items: BlockSeed[]) {
     content: item.content ?? "",
     checked: item.checked ?? false,
     language: item.language ?? "",
+    marks: JSON.stringify(item.marks ?? []),
     position,
   }))
 }
@@ -125,7 +127,11 @@ async function main() {
     authorId: IDS.nash,
     updatedAt: hoursAgo(1),
     items: [
-      { type: "paragraph", content: "Folio 是一个轻量的知识库。用页面把想法收好，用块把结构摆正。它看起来安静，写起来应该很快。" },
+      {
+        type: "paragraph",
+        content: "Folio 是一个轻量的知识库。用页面把想法收好，用块把结构摆正。它看起来安静，写起来应该很快。",
+        marks: [{ type: "bold", start: 0, end: 5 }],
+      },
       { type: "heading2", content: "从这里开始" },
       { type: "bulleted", content: "左侧边栏切换工作区、收藏和页面树" },
       { type: "bulleted", content: "输入 / 插入标题、列表、待办、代码和分割线" },

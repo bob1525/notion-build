@@ -15,6 +15,16 @@ export type Visibility = "private" | "public"
 export type Role = "owner" | "member"
 export type CoverId = "" | "warm" | "mist" | "moss" | "ink" | "rose"
 
+export const INLINE_MARKS = ["bold", "italic", "code", "strike"] as const
+
+export type InlineMarkType = (typeof INLINE_MARKS)[number]
+
+export type InlineMark = {
+  type: InlineMarkType
+  start: number
+  end: number
+}
+
 export type BlockDTO = {
   id: string
   type: BlockType
@@ -22,6 +32,7 @@ export type BlockDTO = {
   checked: boolean
   language: string
   position: number
+  marks: InlineMark[]
 }
 
 export type PageMeta = {
