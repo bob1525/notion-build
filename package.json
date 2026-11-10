@@ -7,6 +7,7 @@
     "build": "node scripts/ensure-env.cjs && next build",
     "start": "node scripts/ensure-env.cjs && next start",
     "lint": "next lint",
+    "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node scripts/ensure-env.cjs && prisma db push && tsx prisma/seed.ts && playwright test",
