@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+dist
+.vercel
+coverage
+playwright-report
+test-results
+blob-report
+.env
+*.log
+tsconfig.tsbuildinfo
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-shm
+prisma/*.db-wal

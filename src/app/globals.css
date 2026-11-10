@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  color: #37352f;
+  background: #fff;
+}
+
+::selection {
+  background: rgba(35, 131, 226, 0.28);
+}
+
+textarea,
+input,
+button,
+select {
+  font: inherit;
+}
+
+textarea {
+  caret-color: #37352f;
+}
+
+.cover-warm {
+  background: linear-gradient(115deg, #f6e6d8 0%, #f3d2c4 46%, #e7eef8 100%);
+}
+
+.cover-mist {
+  background: linear-gradient(115deg, #e7eef8 0%, #f6f3ec 100%);
+}
+
+.cover-moss {
+  background: linear-gradient(115deg, #e4f1e6 0%, #d5e6de 100%);
+}
+
+.cover-ink {
+  background: linear-gradient(115deg, #dbe4f1 0%, #c7d3e4 100%);
+}
+
+.cover-rose {
+  background: linear-gradient(115deg, #fde8ef 0%, #f7ebdf 100%);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(55, 53, 47, 0.28) transparent;
+}
