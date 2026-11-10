@@ -44,7 +44,7 @@
 3. 体积大于 0 且不超过 2MB。
 4. 文件头要和 MIME 一致（PNG / JPEG / GIF / WEBP 魔数）。改了扩展名的文本会被拒绝。
 
-通过后写到 `public/uploads/<uuid>.<ext>`，返回 `{ data: { url: "/uploads/<uuid>.<ext>" } }`。页面把这个地址存进块的 `src`，随原来的自动保存写入 SQLite。`public/uploads/*` 已忽略，不进 git。
+通过后交给图片存储。默认实现写到 `public/uploads/<uuid>.<ext>`，返回 `{ data: { url: "/uploads/<uuid>.<ext>" } }`。换成对象存储的方式见 [IMAGE_STORAGE.md](IMAGE_STORAGE.md)。页面把返回的地址存进块的 `src`，随原来的自动保存写入 SQLite。`public/uploads/*` 已忽略，不进 git。
 
 用地址插入时，`imageUrlError` 只接受带主机名的 `http:` 和 `https:`。`notaurl`、`ftp:` 和空字符串会在块上显示「图片地址无效」或「请填写图片地址」，不会写入 `src`。图片加载失败时显示「图片无法显示」，地址仍保留，方便改。
 
