@@ -51,6 +51,7 @@ model Page {
   visibility  String     @default("private")
   pinned      Boolean    @default(false)
   position    Int        @default(0)
+  revision    Int        @default(0)
   workspaceId String
   parentId    String?
   authorId    String

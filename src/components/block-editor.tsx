@@ -22,7 +22,7 @@ import {
   Trash2,
   Type,
 } from "lucide-react"
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
+import { memo, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { blockTextClass, listMarker } from "@/components/block-style"
 import { CodeText } from "@/components/code-text"
@@ -90,6 +90,30 @@ function placeholderFor(block: BlockDTO, active: boolean) {
   return ""
 }
 
+const EMPTY_BLOCKS: BlockDTO[] = []
+
+function sameBlocks(left: BlockDTO[], right: BlockDTO[]) {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
+}
+
+const RowGate = memo(function RowGate({
+  render,
+}: {
+  block: BlockDTO
+  marker: string | null
+  active: boolean
+  drop: "before" | "after" | null
+  childBlocks: BlockDTO[]
+  render: () => ReactNode
+}) {
+  return render()
+}, (prev, next) => prev.block === next.block && prev.active === next.active && prev.drop === next.drop && prev.marker === next.marker && sameBlocks(prev.childBlocks, next.childBlocks))
+
 export type BlockEditorHandle = {
   focusFirst: () => void
 }
@@ -127,6 +151,11 @@ export function BlockEditor({
   }
 
   useLayoutEffect(() => {
+    const active = document.activeElement
+    if (active instanceof HTMLTextAreaElement && active.dataset.testid === "block-input") {
+      autosize(active)
+      return
+    }
     inputRefs.current.forEach((element) => autosize(element))
   }, [blocks])
 
@@ -248,7 +277,7 @@ export function BlockEditor({
     const block = blocks.find((item) => item.id === menu.blockId)
     if (!block) return
     const content = menu.kind === "slash" || type === "divider" ? "" : block.content
-    onChange(setBlockType(blocks, block.id, type, { content, checked: type === "todo" ? block.checked : false }))
+    onChange(setBlockType(blocksRef.current, block.id, type, { content, checked: type === "todo" ? block.checked : false }))
     focusBlock(block.id, content.length)
     setMenu(null)
   }
@@ -262,14 +291,18 @@ export function BlockEditor({
   }
 
   const roots = blocks.filter((block) => !block.parentId)
+  const menuView = useRef({ menu, activeIndex, formatItems, commands })
+  menuView.current = { menu, activeIndex, formatItems, commands }
 
   function renderList(items: BlockDTO[]) {
     return items.map((block, index) => {
         const marker = listMarker(block.type, index, items)
         const active = activeId === block.id
+        const drop = dropTarget?.id === block.id ? dropTarget.placement : null
+        const childBlocks = block.type === "quote" || block.type === "toggle" ? blocks.filter((item) => item.parentId === block.id) : EMPTY_BLOCKS
         return (
+          <RowGate key={block.id} block={block} marker={marker} active={active} drop={drop} childBlocks={childBlocks} render={() => (
           <div
-            key={block.id}
             ref={(node) => {
               if (node) rowRefs.current.set(block.id, node)
               else rowRefs.current.delete(block.id)
@@ -292,11 +325,11 @@ export function BlockEditor({
                 type="button"
                 aria-label="在下方插入块"
                 data-testid="insert-block"
-                className="rounded p-1 text-faint hover:bg-black/[0.06] hover:text-ink"
+                className="grid h-6 w-6 place-items-center rounded text-faint hover:bg-black/[0.06] hover:text-ink"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => insertBelow(block.id)}
               >
-                <Plus size={15} />
+                {active ? <Plus size={15} /> : null}
               </button>
               <button
                 type="button"
@@ -339,7 +372,7 @@ export function BlockEditor({
                   window.addEventListener("pointerup", up)
                 }}
               >
-                <GripVertical size={15} />
+                {active ? <GripVertical size={15} /> : null}
               </button>
             </div>
 
@@ -353,13 +386,13 @@ export function BlockEditor({
                 onKeyDown={(event) => {
                   if (event.key === "Backspace" || event.key === "Delete") {
                     event.preventDefault()
-                    const result = removeBlock(blocks, block.id)
+                    const result = removeBlock(blocksRef.current, block.id)
                     onChange(result.blocks)
                     focusBlock(result.focusId, result.caret)
                   }
                   if (event.key === "Enter") {
                     event.preventDefault()
-                    const result = splitBlock(blocks, block.id, 0, 0)
+                    const result = splitBlock(blocksRef.current, block.id, 0, 0)
                     onChange(result.blocks)
                     focusBlock(result.focusId, result.caret)
                   }
@@ -389,7 +422,7 @@ export function BlockEditor({
                     type="checkbox"
                     data-testid="todo-toggle"
                     checked={block.checked}
-                    onChange={(event) => onChange(updateBlock(blocks, block.id, { checked: event.target.checked }))}
+                    onChange={(event) => onChange(updateBlock(blocksRef.current, block.id, { checked: event.target.checked }))}
                     className="mt-[7px] h-4 w-4 shrink-0 accent-ink"
                     aria-label="完成待办"
                   />
@@ -402,7 +435,7 @@ export function BlockEditor({
                       <select
                         data-testid="code-language"
                         value={block.language}
-                        onChange={(event) => onChange(updateBlock(blocks, block.id, { language: event.target.value }))}
+                        onChange={(event) => onChange(updateBlock(blocksRef.current, block.id, { language: event.target.value }))}
                         className="bg-transparent text-xs text-muted outline-none"
                       >
                         {CODE_LANGUAGES.map((language) => (
@@ -449,12 +482,12 @@ export function BlockEditor({
                       const value = input.value
                       autosize(input)
                       if (block.type === "code") {
-                        onChange(updateBlock(blocks, block.id, { content: value }))
+                        onChange(updateBlock(blocksRef.current, block.id, { content: value }))
                       } else {
                         const typing = pendingFormat.current?.blockId === block.id ? pendingFormat.current.marks : []
                         const changed = applyTextChange(block.content, block.marks, value, typing)
                         const consumed = consumeInlineMarkup(changed.text, changed.marks)
-                        onChange(updateBlock(blocks, block.id, { content: consumed.text, marks: consumed.marks }))
+                        onChange(updateBlock(blocksRef.current, block.id, { content: consumed.text, marks: consumed.marks }))
                         if (consumed.text !== changed.text) {
                           const caret = mapCaret(consumed.map, input.selectionStart)
                           focusBlock(block.id, caret)
@@ -463,15 +496,20 @@ export function BlockEditor({
                           pendingFormat.current = { ...pendingFormat.current, caret: input.selectionStart }
                         }
                       }
+                      const openMenu = menuView.current.menu
                       if (block.type !== "code" && value.startsWith("/") && !value.includes("\n")) {
                         setMenu({ kind: "slash", blockId: block.id, query: value.slice(1), index: 0 })
-                      } else if (menu?.kind === "slash" && menu.blockId === block.id) {
+                      } else if (openMenu?.kind === "slash" && openMenu.blockId === block.id) {
                         setMenu(null)
                       }
                     }}
                     onKeyDown={(event) => {
                       if (event.nativeEvent.isComposing || composing.current) return
                       const input = event.currentTarget
+                      const menu = menuView.current.menu
+                      const activeIndex = menuView.current.activeIndex
+                      const formatItems = menuView.current.formatItems
+                      const commands = menuView.current.commands
                       if ((event.metaKey || event.ctrlKey) && !event.altKey && block.type !== "code") {
                         const key = event.key.toLowerCase()
                         const mark: InlineMarkType | null = key === "b" ? "bold" : key === "i" ? "italic" : key === "e" ? "code" : event.shiftKey && key === "x" ? "strike" : null
@@ -511,7 +549,7 @@ export function BlockEditor({
                         const matched = matchBlockShortcut(before)
                         if (matched) {
                           event.preventDefault()
-                          onChange(setBlockType(blocks, block.id, matched.type, { content: after, checked: matched.checked }))
+                          onChange(setBlockType(blocksRef.current, block.id, matched.type, { content: after, checked: matched.checked }))
                           focusBlock(block.id, after.length)
                           return
                         }
@@ -520,13 +558,13 @@ export function BlockEditor({
                       if (block.type === "paragraph" && input.selectionStart === input.value.length && input.selectionStart === input.selectionEnd) {
                         if (event.key === "-" && input.value === "--") {
                           event.preventDefault()
-                          onChange(setBlockType(blocks, block.id, "divider"))
+                          onChange(setBlockType(blocksRef.current, block.id, "divider"))
                           focusBlock(block.id, 0)
                           return
                         }
                         if (event.key === "`" && input.value === "``") {
                           event.preventDefault()
-                          onChange(setBlockType(blocks, block.id, "code", { content: "" }))
+                          onChange(setBlockType(blocksRef.current, block.id, "code", { content: "" }))
                           focusBlock(block.id, 0)
                           return
                         }
@@ -534,28 +572,28 @@ export function BlockEditor({
 
                       if (event.key === "Enter" && !event.shiftKey && block.type !== "code") {
                         event.preventDefault()
-                        const result = splitBlock(blocks, block.id, input.selectionStart, input.selectionEnd)
+                        const result = splitBlock(blocksRef.current, block.id, input.selectionStart, input.selectionEnd)
                         onChange(result.blocks)
                         focusBlock(result.focusId, result.caret)
                         return
                       }
                       if (block.type === "code" && event.key === "Enter" && input.value === "") {
                         event.preventDefault()
-                        const result = splitBlock(blocks, block.id, 0, 0)
+                        const result = splitBlock(blocksRef.current, block.id, 0, 0)
                         onChange(result.blocks)
                         focusBlock(result.focusId, result.caret)
                         return
                       }
                       if (block.type === "code" && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
                         event.preventDefault()
-                        const result = splitBlock(blocks, block.id, input.value.length, input.value.length)
+                        const result = splitBlock(blocksRef.current, block.id, input.value.length, input.value.length)
                         onChange(result.blocks)
                         focusBlock(result.focusId, result.caret)
                         return
                       }
                       if (event.key === "Tab" && block.type !== "code" && !menu && input.selectionStart === 0 && input.selectionEnd === 0) {
-                        const next = event.shiftKey ? unnestBlock(blocks, block.id) : nestUnderPrevious(blocks, block.id)
-                        if (next !== blocks) {
+                        const next = event.shiftKey ? unnestBlock(blocksRef.current, block.id) : nestUnderPrevious(blocksRef.current, block.id)
+                        if (next !== blocksRef.current) {
                           event.preventDefault()
                           onChange(next)
                           focusBlock(block.id, 0)
@@ -566,12 +604,12 @@ export function BlockEditor({
                         event.preventDefault()
                         const start = input.selectionStart
                         const value = `${input.value.slice(0, start)}  ${input.value.slice(input.selectionEnd)}`
-                        onChange(updateBlock(blocks, block.id, { content: value }))
+                        onChange(updateBlock(blocksRef.current, block.id, { content: value }))
                         focusBlock(block.id, start + 2)
                         return
                       }
                       if (event.key === "Backspace" && input.selectionStart === 0 && input.selectionEnd === 0) {
-                        const result = backspaceAtStart(blocks, block.id)
+                        const result = backspaceAtStart(blocksRef.current, block.id)
                         if (result) {
                           event.preventDefault()
                           onChange(result.blocks)
@@ -618,12 +656,13 @@ export function BlockEditor({
                 </button>
                 {!block.collapsed ? (
                   <div data-testid={block.type === "quote" ? "quote-children" : "toggle-body"} className="border-l border-black/10 pl-3">
-                    {renderList(blocks.filter((item) => item.parentId === block.id))}
+                    {renderList(childBlocks)}
                   </div>
                 ) : null}
               </div>
             ) : null}
           </div>
+          )} />
         )
     })
   }
@@ -673,14 +712,14 @@ export function BlockEditor({
               ))}
               {menu.kind === "actions" ? (
                 <div className="mt-1 border-t border-black/[0.06] p-1">
-                  <MenuAction label="上移" icon={ArrowUp} onClick={() => { onChange(moveBlock(blocks, menu.blockId, -1)); setMenu(null) }} />
-                  <MenuAction label="下移" icon={ArrowDown} onClick={() => { onChange(moveBlock(blocks, menu.blockId, 1)); setMenu(null) }} />
+                  <MenuAction label="上移" icon={ArrowUp} onClick={() => { onChange(moveBlock(blocksRef.current, menu.blockId, -1)); setMenu(null) }} />
+                  <MenuAction label="下移" icon={ArrowDown} onClick={() => { onChange(moveBlock(blocksRef.current, menu.blockId, 1)); setMenu(null) }} />
                   <MenuAction
                     label="删除"
                     icon={Trash2}
                     danger
                     onClick={() => {
-                      const result = removeBlock(blocks, menu.blockId)
+                      const result = removeBlock(blocksRef.current, menu.blockId)
                       onChange(result.blocks)
                       focusBlock(result.focusId, result.caret)
                       setMenu(null)

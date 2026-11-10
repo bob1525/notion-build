@@ -12,7 +12,7 @@ import { searchPages } from "@/lib/search"
 import { breadcrumbTitles, planPageCopy, planPageMove } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta, SearchHit, UserDTO, WorkspaceDTO } from "@/lib/types"
 import { readRememberedWorkspace } from "@/server/auth"
-import { HttpError } from "@/server/http"
+import { ConflictError, HttpError } from "@/server/http"
 import type { Page } from "@prisma/client"
 
 export const registerSchema = z.object({
@@ -55,6 +55,8 @@ export const updatePageSchema = z.object({
   visibility: z.enum(["private", "public"]),
   pinned: z.boolean(),
   blocks: z.array(blockInputSchema).max(400),
+  baseRevision: z.number().int().nonnegative(),
+  overwrite: z.boolean().optional().default(false),
 })
 
 function readMarks(value: string, content: string): InlineMark[] {
@@ -188,6 +190,7 @@ export async function loadPageDetail(
       ...toPageMeta(page, page.favorites.length > 0),
       authorName: page.author.name,
       blocks: page.blocks.map(toBlock),
+      revision: page.revision,
     },
   }
 }
@@ -329,7 +332,23 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
     throw new HttpError(403, "只有作者或工作区所有者可以修改可见性")
   }
   const blocks = normalizeBlocks(input.blocks)
+  let conflicted = false
   await prisma.$transaction(async (tx) => {
+    const gate = await tx.page.updateMany({
+      where: input.overwrite ? { id: pageId } : { id: pageId, revision: input.baseRevision },
+      data: {
+        title: cleanTitle(input.title),
+        icon: clampIcon(input.icon, "📄"),
+        cover: asCover(input.cover),
+        visibility: input.visibility,
+        pinned: input.pinned,
+        revision: { increment: 1 },
+      },
+    })
+    if (gate.count !== 1) {
+      conflicted = true
+      return
+    }
     await tx.block.deleteMany({ where: { pageId } })
     if (blocks.length) {
       await tx.block.createMany({
@@ -349,17 +368,13 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
         })),
       })
     }
-    await tx.page.update({
-      where: { id: pageId },
-      data: {
-        title: cleanTitle(input.title),
-        icon: clampIcon(input.icon, "📄"),
-        cover: asCover(input.cover),
-        visibility: input.visibility,
-        pinned: input.pinned,
-      },
-    })
   })
+  if (conflicted) {
+    const latest = await loadPageDetail(userId, pageId)
+    if (latest.kind === "missing") throw new HttpError(404, "找不到这个页面")
+    if (latest.kind !== "ok") throw new HttpError(403, "你没有编辑这个页面的权限")
+    throw new ConflictError(latest.page)
+  }
   const refreshed = await loadPageDetail(userId, pageId)
   if (refreshed.kind !== "ok") throw new HttpError(500, "保存后没有读到页面")
   return refreshed.page
@@ -525,7 +540,7 @@ export async function setFavorite(userId: string, pageId: string, favorited: boo
   }
   const refreshed = await loadPageDetail(userId, pageId)
   if (refreshed.kind !== "ok") throw new HttpError(500, "收藏状态没有更新")
-  const { blocks: _blocks, authorName: _authorName, ...meta } = refreshed.page
+  const { blocks: _blocks, authorName: _authorName, revision: _revision, ...meta } = refreshed.page
   return meta
 }
 

@@ -64,6 +64,7 @@ export type PageMeta = {
 export type PageDetail = PageMeta & {
   authorName: string
   blocks: BlockDTO[]
+  revision: number
 }
 
 export type WorkspaceDTO = {

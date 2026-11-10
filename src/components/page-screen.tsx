@@ -30,7 +30,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const { user, workspace, pages, upsertPage, createPage, duplicatePage, removePageTree } = useWorkspace()
   const [meta, setMeta] = useState(initial)
   const [blocks, setBlocks] = useState(() => ensureBlocks(initial.blocks, initial.id))
-  const [status, setStatus] = useState<"saved" | "saving" | "error">("saved")
+  const [status, setStatus] = useState<"saved" | "saving" | "error" | "conflict">("saved")
   const [mode, setMode] = useState<"blocks" | "markdown">("blocks")
   const [markdown, setMarkdown] = useState("")
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -38,7 +38,11 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const [copying, setCopying] = useState(false)
   const [iconOpen, setIconOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [conflictOpen, setConflictOpen] = useState(false)
   const favoriteLock = useRef(false)
+  const conflictLock = useRef(false)
+  const flushing = useRef(false)
+  const flushAgain = useRef(false)
   const metaRef = useRef(meta)
   const blocksRef = useRef(blocks)
   const dirty = useRef(false)
@@ -54,9 +58,9 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   }, [meta.title])
 
   useEffect(() => {
-    return () => {
+      return () => {
       if (timer.current) clearTimeout(timer.current)
-      if (!dirty.current) return
+      if (!dirty.current || conflictLock.current) return
       void fetch(`/api/pages/${metaRef.current.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -85,6 +89,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
 
   function queueSave() {
     dirty.current = true
+    if (conflictLock.current) return
     setStatus("saving")
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
@@ -92,38 +97,93 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     }, 500)
   }
 
-  async function flush() {
+  function applyPage(page: PageDetail, favorited = page.favorited) {
+    const nextBlocks = ensureBlocks(page.blocks, page.id)
+    const nextMeta = { ...page, favorited, blocks: nextBlocks }
+    metaRef.current = nextMeta
+    blocksRef.current = nextBlocks
+    setMeta(nextMeta)
+    setBlocks(nextBlocks)
+    setMarkdown(markdownDraftFrom(nextBlocks))
+    upsertPage(toMeta(nextMeta))
+  }
+
+  async function sendSnapshot(overwrite: boolean) {
     const snapshotMeta = metaRef.current
     const snapshotBlocks = blocksRef.current
     const fingerprint = JSON.stringify(pagePayload(snapshotMeta, snapshotBlocks))
     try {
       const saved = await api<PageDetail>(`/api/pages/${snapshotMeta.id}`, {
         method: "PATCH",
-        body: JSON.stringify(JSON.parse(fingerprint)),
+        body: JSON.stringify(pagePayload(snapshotMeta, snapshotBlocks, { overwrite })),
       })
       const latest = JSON.stringify(pagePayload(metaRef.current, blocksRef.current))
       const favorited = snapshotMeta.favorited === metaRef.current.favorited ? saved.favorited : metaRef.current.favorited
       if (latest === fingerprint) {
         dirty.current = false
-        const nextBlocks = ensureBlocks(saved.blocks, saved.id)
-        const nextMeta = { ...saved, favorited, blocks: nextBlocks }
-        metaRef.current = nextMeta
-        blocksRef.current = nextBlocks
-        setMeta(nextMeta)
-        setBlocks(nextBlocks)
+        applyPage(saved, favorited)
         setStatus("saved")
-        upsertPage(toMeta(nextMeta))
-      } else {
-        const nextMeta = { ...metaRef.current, favorited, updatedAt: saved.updatedAt }
-        metaRef.current = nextMeta
-        setMeta(nextMeta)
-        upsertPage(toMeta(nextMeta))
-        queueSave()
+        setConflictOpen(false)
+        return "saved" as const
       }
+      const nextMeta = { ...metaRef.current, favorited, revision: saved.revision, updatedAt: saved.updatedAt }
+      metaRef.current = nextMeta
+      setMeta(nextMeta)
+      upsertPage(toMeta(nextMeta))
+      return "again" as const
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        conflictLock.current = true
+        if (timer.current) clearTimeout(timer.current)
+        dirty.current = true
+        setStatus("conflict")
+        setConflictOpen(true)
+        return "conflict" as const
+      }
       setStatus("error")
       toast(error instanceof ApiError ? error.message : "保存失败")
+      return "error" as const
     }
+  }
+
+  async function flush(overwrite = false) {
+    if (overwrite) conflictLock.current = false
+    if (conflictLock.current) return
+    if (flushing.current) {
+      flushAgain.current = true
+      return
+    }
+    flushing.current = true
+    try {
+      let force = overwrite
+      let result: "saved" | "again" | "conflict" | "error" = "saved"
+      do {
+        flushAgain.current = false
+        result = await sendSnapshot(force)
+        force = false
+      } while (!conflictLock.current && result !== "error" && (result === "again" || flushAgain.current))
+    } finally {
+      flushing.current = false
+    }
+  }
+
+  async function discardConflict() {
+    try {
+      const latest = await api<PageDetail>(`/api/pages/${metaRef.current.id}`)
+      conflictLock.current = false
+      dirty.current = false
+      if (timer.current) clearTimeout(timer.current)
+      applyPage(latest)
+      setConflictOpen(false)
+      setStatus("saved")
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : "没有刷新页面")
+    }
+  }
+
+  async function overwriteConflict() {
+    setConflictOpen(false)
+    await flush(true)
   }
 
   function commitMeta(patch: Partial<PageDetail>, save = true) {
@@ -208,7 +268,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const canDelete = canDeletePage(user.id, workspace.role, meta)
   const canVisibility = canManageVisibility(user.id, workspace.role, meta)
   const blank = blocks.length === 1 && blocks[0]?.type === "paragraph" && !blocks[0].content
-  const statusText = status === "saving" ? "保存中…" : status === "error" ? "保存失败" : "已保存"
+  const statusText = status === "saving" ? "保存中…" : status === "error" ? "保存失败" : status === "conflict" ? "发现冲突" : "已保存"
 
   return (
     <article data-testid="page-screen" className="pb-24">
@@ -363,7 +423,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           <span data-testid="save-status" className="ml-auto text-xs text-faint">
             {statusText}
             {status === "error" ? (
-              <button type="button" className="ml-2 underline" onClick={() => void flush()}>重试</button>
+              <button type="button" data-testid="save-retry" className="ml-2 underline" onClick={() => void flush()}>重试</button>
             ) : null}
           </span>
         </div>
@@ -415,6 +475,13 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         ) : null}
       </div>
 
+      <Dialog open={conflictOpen} title="这篇页面在别处被修改了" onClose={() => setConflictOpen(true)} testId="conflict-dialog">
+        <p className="text-sm leading-6 text-muted">你这次的修改还没写进去。覆盖会用你现在的内容替换已经保存的版本。放弃并刷新会丢掉你还没保存的修改，改回最新内容。</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="soft" data-testid="conflict-discard" onClick={() => void discardConflict()}>放弃并刷新</Button>
+          <Button data-testid="conflict-overwrite" onClick={() => void overwriteConflict()}>覆盖</Button>
+        </div>
+      </Dialog>
       <Dialog open={copyOpen} title="复制页面" onClose={() => setCopyOpen(false)}>
         <p className="text-sm leading-6 text-muted">副本标题会加上“副本”。可以选择只复制这一页，或连同子页面一起复制。正文、列表和图片都会带上。</p>
         <div className="mt-4 flex justify-end gap-2">

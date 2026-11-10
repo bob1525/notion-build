@@ -21,7 +21,7 @@ export async function api<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function pagePayload(
-  meta: { title: string; icon: string; cover: string; visibility: string; pinned: boolean },
+  meta: { title: string; icon: string; cover: string; visibility: string; pinned: boolean; revision: number },
   blocks: Array<{
     id: string
     type: string
@@ -34,6 +34,7 @@ export function pagePayload(
     src?: string
     width?: string
   }>,
+  options?: { overwrite?: boolean },
 ) {
   return {
     title: meta.title,
@@ -41,6 +42,8 @@ export function pagePayload(
     cover: meta.cover,
     visibility: meta.visibility,
     pinned: meta.pinned,
+    baseRevision: meta.revision,
+    overwrite: options?.overwrite ?? false,
     blocks: blocks.map(({ id, type, content, checked, language, marks, parentId, collapsed, src, width }) => ({
       id,
       type,

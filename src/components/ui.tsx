@@ -58,11 +58,13 @@ export function Dialog({
   title,
   onClose,
   children,
+  testId,
 }: {
   open: boolean
   title: string
   onClose: () => void
   children: React.ReactNode
+  testId?: string
 }) {
   useEffect(() => {
     if (!open) return
@@ -77,7 +79,7 @@ export function Dialog({
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center">
       <button className="absolute inset-0 bg-black/30" aria-label="关闭" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={title} className="relative z-10 w-full max-w-md rounded-xl bg-white p-4 shadow-pop">
+      <div role="dialog" aria-modal="true" aria-label={title} data-testid={testId} className="relative z-10 w-full max-w-md rounded-xl bg-white p-4 shadow-pop">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold">{title}</h2>
           <button type="button" onClick={onClose} aria-label="关闭对话框" className="rounded-md p-1 text-muted hover:bg-black/[0.05]">

@@ -58,25 +58,51 @@ function validParent(block: BlockDTO, byId: Map<string, BlockDTO>) {
   return block.parentId
 }
 
+function sameMarks(left: InlineMark[], right: InlineMark[]) {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index].type !== right[index].type || left[index].start !== right[index].start || left[index].end !== right[index].end) return false
+  }
+  return true
+}
+
+function projectBlock(block: BlockDTO, position: number): BlockDTO {
+  const type = block.type
+  const content = type === "divider" ? "" : block.content
+  const checked = type === "todo" ? Boolean(block.checked) : false
+  const language = type === "code" ? block.language.trim().toLowerCase() : ""
+  const nextMarks = PLAIN_MARK_TYPES.has(type) ? [] : normalizeMarks(content, block.marks ?? [])
+  const marks = sameMarks(block.marks, nextMarks) ? block.marks : nextMarks
+  const parentId = block.parentId ?? ""
+  const collapsed = type === "toggle" ? Boolean(block.collapsed) : false
+  const src = type === "image" ? (block.src ?? "").trim() : ""
+  const width = (type === "image" ? imageWidth(block.width) || "medium" : "") as BlockDTO["width"]
+  if (
+    block.position === position &&
+    block.content === content &&
+    block.checked === checked &&
+    block.language === language &&
+    block.marks === marks &&
+    block.parentId === parentId &&
+    block.collapsed === collapsed &&
+    block.src === src &&
+    block.width === width
+  ) return block
+  return { ...block, position, content, checked, language, marks, parentId, collapsed, src, width }
+}
+
 export function withPositions(blocks: BlockDTO[]): BlockDTO[] {
-  const prepared = blocks.map((block, position) => {
-    const type = block.type
-    const content = type === "divider" ? "" : block.content
-    return {
-      ...block,
-      position,
-      content,
-      checked: type === "todo" ? Boolean(block.checked) : false,
-      language: type === "code" ? block.language.trim().toLowerCase() : "",
-      marks: PLAIN_MARK_TYPES.has(type) ? [] : normalizeMarks(content, block.marks ?? []),
-      parentId: block.parentId ?? "",
-      collapsed: type === "toggle" ? Boolean(block.collapsed) : false,
-      src: type === "image" ? (block.src ?? "").trim() : "",
-      width: (type === "image" ? imageWidth(block.width) || "medium" : "") as BlockDTO["width"],
-    }
-  })
+  const prepared = blocks.map((block, position) => projectBlock(block, position))
   const byId = new Map(prepared.map((block) => [block.id, block]))
-  return prepared.map((block) => ({ ...block, parentId: validParent(block, byId) }))
+  let same = true
+  const result = prepared.map((block, index) => {
+    const parentId = validParent(block, byId)
+    const next = parentId === block.parentId ? block : { ...block, parentId }
+    if (next !== blocks[index]) same = false
+    return next
+  })
+  return same ? blocks : result
 }
 
 export function ensureBlocks(blocks: BlockDTO[], pageId: string) {

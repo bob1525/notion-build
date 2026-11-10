@@ -26,7 +26,7 @@ type WorkspaceContextValue = {
 }
 
 function blankPage(page: PageMeta, authorName: string): PageDetail {
-  return { ...page, authorName, blocks: ensureBlocks([], page.id) }
+  return { ...page, authorName, blocks: ensureBlocks([], page.id), revision: 0 }
 }
 
 function pageTreeIds(pages: PageMeta[], rootId: string) {
