@@ -149,3 +149,41 @@ test("throttles autosave and retries after a failed save", async ({ page }) => {
   await page.reload()
   await expect(page.getByTestId("block-input").first()).toHaveValue("重试后留下")
 })
+
+test("keeps the draft through consecutive save failures and recovers on retry", async ({ page }) => {
+  await login(page)
+  const id = await createTitledPage(page, "连续失败")
+  let failures = 0
+  await page.route(/\/api\/pages\/[^/]+$/, async (route) => {
+    if (route.request().method() === "PATCH" && failures < 3) {
+      failures += 1
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "保存失败" }) })
+      return
+    }
+    await route.continue()
+  })
+  const failedSave = () => page.waitForResponse((response) => response.url().includes(`/api/pages/${id}`) && response.request().method() === "PATCH" && response.status() === 500)
+  const first = failedSave()
+  await page.getByTestId("block-input").first().fill("连续失败后还在")
+  await first
+  await expect(page.getByTestId("save-status")).toContainText("保存失败")
+  await expect(page.getByTestId("save-retry")).toBeVisible()
+  await expect(page.getByTestId("toast").last()).toHaveText("保存失败")
+  await expect(page.getByTestId("block-input").first()).toHaveValue("连续失败后还在")
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const again = failedSave()
+    await page.getByTestId("save-retry").click()
+    await again
+    await expect(page.getByTestId("save-status")).toContainText("保存失败")
+    await expect(page.getByTestId("block-input").first()).toHaveValue("连续失败后还在")
+    await expect(page.getByTestId("save-retry")).toBeVisible()
+  }
+  const saved = patch(page, id, 200)
+  await page.getByTestId("save-retry").click()
+  await saved
+  await expect(page.getByTestId("save-status")).toHaveText("已保存")
+  await expect(page.getByTestId("save-retry")).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId("block-input").first()).toHaveValue("连续失败后还在")
+  expect(failures).toBe(3)
+})

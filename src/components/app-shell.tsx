@@ -15,6 +15,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { creatingPage, openedPage } = useWorkspace()
 
   useEffect(() => {
+    let wide = window.matchMedia("(min-width: 768px)").matches
+    const onResize = () => {
+      const next = window.matchMedia("(min-width: 768px)").matches
+      if (next === wide) return
+      wide = next
+      setNavOpen(false)
+    }
+    window.addEventListener("resize", onResize)
+    return () => window.removeEventListener("resize", onResize)
+  }, [])
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         const keyEvent = event

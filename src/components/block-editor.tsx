@@ -32,6 +32,18 @@ import { ImageBlock } from "@/components/image-block"
 import { InlineText } from "@/components/inline-text"
 import { CODE_LANGUAGES, filterCommands, filterFormatCommands, SLASH_COMMANDS, type SlashCommand } from "@/lib/constants"
 import { createBlock } from "@/lib/blocks"
+import {
+  blocksBetween,
+  decodeClipboardHtml,
+  encodeClipboardHtml,
+  insertPastedBlocks,
+  paragraphsFromPlain,
+  pasteInline,
+  readStoredPayload,
+  sliceInline,
+  storeClipboard,
+  type ClipboardPayload,
+} from "@/lib/clipboard"
 import { cn } from "@/lib/cn"
 import {
   backspaceAtStart,
@@ -117,12 +129,13 @@ const RowGate = memo(function RowGate({
   block: BlockDTO
   marker: string | null
   active: boolean
+  selected: boolean
   drop: "before" | "after" | null
   childBlocks: BlockDTO[]
   render: () => ReactNode
 }) {
   return render()
-}, (prev, next) => prev.block === next.block && prev.active === next.active && prev.drop === next.drop && prev.marker === next.marker && sameBlocks(prev.childBlocks, next.childBlocks))
+}, (prev, next) => prev.block === next.block && prev.active === next.active && prev.selected === next.selected && prev.drop === next.drop && prev.marker === next.marker && sameBlocks(prev.childBlocks, next.childBlocks))
 
 export type BlockEditorHandle = {
   focusFirst: () => void
@@ -156,7 +169,13 @@ export function BlockEditor({
   const linkInputRef = useRef<HTMLInputElement>(null)
   const [dropTarget, setDropTarget] = useState<{ id: string; placement: "before" | "after" } | null>(null)
   const [toolbar, setToolbar] = useState<{ left: number; top: number } | null>(null)
+  const [blockRange, setBlockRange] = useState<{ anchorId: string; focusId: string } | null>(null)
   const dropRef = useRef(dropTarget)
+  const rangeRef = useRef(blockRange)
+  const richClipboard = useRef<{ plain: string; payload: ClipboardPayload } | null>(null)
+  const pasteSerial = useRef(0)
+  const pasteConsumed = useRef(0)
+  const pasteApplied = useRef(0)
   blocksRef.current = blocks
   selectionRef.current = selection
   dropRef.current = dropTarget
@@ -404,7 +423,55 @@ export function BlockEditor({
     setMenu({ kind: "slash", blockId: created.id, query: "", index: 0 })
   }
 
+  function setRange(next: { anchorId: string; focusId: string } | null) {
+    rangeRef.current = next
+    setBlockRange(next)
+  }
+
+  function publishClipboard(payload: ClipboardPayload) {
+    const plain = storeClipboard(payload)
+    richClipboard.current = { plain, payload }
+    const clipboard = navigator.clipboard
+    if (!clipboard?.write || typeof ClipboardItem === "undefined") return
+    const html = encodeClipboardHtml(payload)
+    void clipboard
+      .write([
+        new ClipboardItem({
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        }),
+      ])
+      .catch(() => undefined)
+  }
+
+  function payloadFromTransfer(data: DataTransfer) {
+    const plain = data.getData("text/plain")
+    return decodeClipboardHtml(data.getData("text/html")) ?? readStoredPayload(plain) ?? (richClipboard.current && (plain === "" || plain === richClipboard.current.plain || plain.trim() === richClipboard.current.plain.trim()) ? richClipboard.current.payload : null)
+  }
+
+  function applyClipboard(input: HTMLTextAreaElement, payload: ClipboardPayload) {
+    if (pasteApplied.current === pasteSerial.current) return
+    pasteApplied.current = pasteSerial.current
+    const block = blocksRef.current.find((item) => item.id === input.dataset.blockId)
+    if (!block) return
+    if (payload.kind === "inline") {
+      if (block.type === "code") return
+      const start = input.selectionStart ?? 0
+      const end = input.selectionEnd ?? start
+      const next = pasteInline(block.content, block.marks, start, end, payload.text, payload.marks)
+      onChange(updateBlock(blocksRef.current, block.id, next))
+      focusBlock(block.id, Math.min(start, end) + payload.text.length)
+      setRange(null)
+      return
+    }
+    const result = insertPastedBlocks(blocksRef.current, block.id, payload.blocks, () => crypto.randomUUID())
+    onChange(result.blocks)
+    focusBlock(result.focusId, result.caret)
+    setRange(null)
+  }
+
   const roots = blocks.filter((block) => !block.parentId)
+  const selectedIds = new Set(blockRange ? blocksBetween(blocks, blockRange.anchorId, blockRange.focusId).map((block) => block.id) : [])
   const menuView = useRef({ menu, activeIndex, formatItems, commands })
   menuView.current = { menu, activeIndex, formatItems, commands }
 
@@ -412,10 +479,11 @@ export function BlockEditor({
     return items.map((block, index) => {
         const marker = listMarker(block.type, index, items)
         const active = activeId === block.id
+        const selected = selectedIds.has(block.id)
         const drop = dropTarget?.id === block.id ? dropTarget.placement : null
         const childBlocks = block.type === "quote" || block.type === "toggle" ? blocks.filter((item) => item.parentId === block.id) : EMPTY_BLOCKS
         return (
-          <RowGate key={block.id} block={block} marker={marker} active={active} drop={drop} childBlocks={childBlocks} render={() => (
+          <RowGate key={block.id} block={block} marker={marker} active={active} selected={selected} drop={drop} childBlocks={childBlocks} render={() => (
           <div
             ref={(node) => {
               if (node) rowRefs.current.set(block.id, node)
@@ -424,7 +492,8 @@ export function BlockEditor({
             data-testid="block"
             data-block-id={block.id}
             data-block-type={block.type}
-            className="group relative py-[2px]"
+            data-block-selected={selected ? "true" : "false"}
+            className={cn("group relative py-[2px]", selected && "rounded-md bg-black/[0.04]")}
             onFocus={() => setActiveId(block.id)}
           >
             {dropTarget?.id === block.id && dropTarget.placement === "before" ? <div data-testid="drop-indicator" className="absolute inset-x-0 top-0 z-10 h-0.5 bg-sky-600" /> : null}
@@ -594,7 +663,44 @@ export function BlockEditor({
                     onCompositionEnd={() => {
                       composing.current = false
                     }}
+                    onCopy={(event) => {
+                      const input = event.currentTarget
+                      if (input.selectionStart === input.selectionEnd || block.type === "code") return
+                      const sliced = sliceInline(block.content, block.marks, input.selectionStart, input.selectionEnd)
+                      if (!sliced.marks.length) return
+                      const payload: ClipboardPayload = { kind: "inline", text: sliced.text, marks: sliced.marks }
+                      event.clipboardData.setData("text/html", encodeClipboardHtml(payload))
+                      event.clipboardData.setData("text/plain", sliced.text)
+                      publishClipboard(payload)
+                    }}
+                    onPaste={(event) => {
+                      pasteConsumed.current = pasteSerial.current
+                      if (pasteApplied.current === pasteSerial.current) {
+                        event.preventDefault()
+                        return
+                      }
+                      const plain = event.clipboardData.getData("text/plain")
+                      const payload = payloadFromTransfer(event.clipboardData)
+                      if (!payload) {
+                        pasteApplied.current = pasteSerial.current
+                        if (block.type !== "code" && plain.includes("\n")) {
+                          event.preventDefault()
+                          const result = insertPastedBlocks(blocksRef.current, block.id, paragraphsFromPlain(plain), () => crypto.randomUUID())
+                          onChange(result.blocks)
+                          focusBlock(result.focusId, result.caret)
+                          setRange(null)
+                        }
+                        return
+                      }
+                      if (block.type === "code" && payload.kind === "inline") {
+                        pasteApplied.current = pasteSerial.current
+                        return
+                      }
+                      event.preventDefault()
+                      applyClipboard(event.currentTarget, payload)
+                    }}
                     onChange={(event) => {
+                      if (rangeRef.current) setRange(null)
                       const input = event.target
                       const value = input.value
                       autosize(input)
@@ -628,6 +734,24 @@ export function BlockEditor({
                       const formatItems = menuView.current.formatItems
                       const commands = menuView.current.commands
                       if (event.defaultPrevented) return
+                      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "c" && input.selectionStart === input.selectionEnd && rangeRef.current) {
+                        const picked = blocksBetween(blocksRef.current, rangeRef.current.anchorId, rangeRef.current.focusId)
+                        if (picked.length > 1) {
+                          event.preventDefault()
+                          publishClipboard({ kind: "blocks", blocks: picked })
+                          return
+                        }
+                      }
+                      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "v") {
+                        const stamp = ++pasteSerial.current
+                        const field = input
+                        window.setTimeout(() => {
+                          if (pasteApplied.current === stamp || pasteConsumed.current === stamp || !field.isConnected) return
+                          const payload = readStoredPayload("")
+                          if (!payload) return
+                          applyClipboard(field, payload)
+                        }, 0)
+                      }
                       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k" && block.type !== "code") {
                         const domStart = input.selectionStart ?? 0
                         const domEnd = input.selectionEnd ?? 0
@@ -752,6 +876,22 @@ export function BlockEditor({
                         }
                         return
                       }
+                      if ((event.key === "ArrowUp" || event.key === "ArrowDown") && event.shiftKey && input.selectionStart === input.selectionEnd) {
+                        const atEdge = event.key === "ArrowUp" ? input.selectionStart === 0 : input.selectionStart === input.value.length
+                        if (atEdge) {
+                          const list = blocksRef.current
+                          const currentIndex = list.findIndex((item) => item.id === block.id)
+                          const existing = rangeRef.current
+                          const focusIndex = existing ? list.findIndex((item) => item.id === existing.focusId) : currentIndex
+                          const nextIndex = event.key === "ArrowUp" ? focusIndex - 1 : focusIndex + 1
+                          if (currentIndex >= 0 && nextIndex >= 0 && nextIndex < list.length) {
+                            event.preventDefault()
+                            setRange({ anchorId: existing?.anchorId ?? block.id, focusId: list[nextIndex]!.id })
+                            return
+                          }
+                        }
+                      }
+                      if (!event.shiftKey && rangeRef.current && (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Escape")) setRange(null)
                       if (event.key === "ArrowUp" && input.selectionStart === 0 && input.selectionEnd === 0 && index > 0) {
                         const previous = items[index - 1]
                         event.preventDefault()
