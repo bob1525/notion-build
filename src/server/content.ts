@@ -1,4 +1,5 @@
 import "server-only"
+import { randomUUID } from "node:crypto"
 import bcrypt from "bcryptjs"
 import { z } from "zod"
 import { blockInputSchema, normalizeBlocks } from "@/lib/blocks"
@@ -6,9 +7,9 @@ import { normalizeMarks } from "@/lib/rich-text"
 import type { InlineMark } from "@/lib/types"
 import { prisma } from "@/lib/db"
 import { asBlockType, asCover, asRole, asVisibility, clampIcon, cleanTitle, displayTitle, pickWorkspaceId } from "@/lib/format"
-import { canDeletePage, canManageVisibility, canViewPage } from "@/lib/permissions"
+import { canDeletePage, canEditPage, canManageVisibility, canViewPage } from "@/lib/permissions"
 import { searchPages } from "@/lib/search"
-import { breadcrumbTitles } from "@/lib/tree"
+import { breadcrumbTitles, planPageCopy, planPageMove } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta, SearchHit, UserDTO, WorkspaceDTO } from "@/lib/types"
 import { readRememberedWorkspace } from "@/server/auth"
 import { HttpError } from "@/server/http"
@@ -35,6 +36,16 @@ export const createPageSchema = z.object({
   title: z.string().max(200).optional(),
   parentId: z.string().nullable().optional(),
   icon: z.string().max(32).optional(),
+})
+
+export const movePageSchema = z.object({
+  pageId: z.string().min(1),
+  targetId: z.string().min(1),
+  placement: z.enum(["before", "after", "inside"]),
+})
+
+export const duplicatePageSchema = z.object({
+  includeChildren: z.boolean(),
 })
 
 export const updatePageSchema = z.object({
@@ -352,6 +363,142 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
   const refreshed = await loadPageDetail(userId, pageId)
   if (refreshed.kind !== "ok") throw new HttpError(500, "保存后没有读到页面")
   return refreshed.page
+}
+
+export async function moveWorkspacePage(userId: string, workspaceId: string, input: z.infer<typeof movePageSchema>) {
+  const membership = await prisma.workspaceMember.findUnique({
+    where: { userId_workspaceId: { userId, workspaceId } },
+  })
+  if (!membership) throw new HttpError(404, "找不到这个工作区")
+  const records = await prisma.page.findMany({ where: { workspaceId } })
+  const source = records.find((page) => page.id === input.pageId)
+  const target = records.find((page) => page.id === input.targetId)
+  if (!source) throw new HttpError(404, "找不到这个页面")
+  if (!target) throw new HttpError(400, "找不到目标页面")
+  if (!canEditPage(userId, { authorId: source.authorId, visibility: asVisibility(source.visibility) })) {
+    throw new HttpError(403, "你没有移动这个页面的权限")
+  }
+  if (!canViewPage(userId, { authorId: target.authorId, visibility: asVisibility(target.visibility) })) {
+    throw new HttpError(403, "你没有把页面拖到这里的权限")
+  }
+  const plan = planPageMove(
+    records.map((page) => ({
+      id: page.id,
+      parentId: page.parentId,
+      pinned: page.pinned,
+      position: page.position,
+      title: page.title,
+    })),
+    input.pageId,
+    input.targetId,
+    input.placement,
+  )
+  if (!plan.ok) throw new HttpError(400, plan.message)
+  const current = new Map(records.map((page) => [page.id, page]))
+  const changed = plan.pages.filter((page) => {
+    const previous = current.get(page.id)
+    return previous && (previous.parentId !== page.parentId || previous.position !== page.position)
+  })
+  if (changed.length) {
+    await prisma.$transaction(
+      changed.map((page) =>
+        prisma.page.update({
+          where: { id: page.id },
+          data: { parentId: page.parentId, position: page.position },
+        }),
+      ),
+    )
+  }
+  return visiblePageMetas(userId, workspaceId)
+}
+
+export async function duplicatePage(userId: string, pageId: string, includeChildren: boolean) {
+  const loaded = await loadPageDetail(userId, pageId)
+  if (loaded.kind === "missing") throw new HttpError(404, "找不到这个页面")
+  if (loaded.kind === "forbidden") throw new HttpError(403, "你没有复制这个页面的权限")
+  const workspaceId = loaded.page.workspaceId
+  const records = await prisma.page.findMany({ where: { workspaceId } })
+  const visible = records.filter((page) =>
+    canViewPage(userId, { authorId: page.authorId, visibility: asVisibility(page.visibility) }),
+  )
+  const plan = planPageCopy(
+    visible.map((page) => ({ id: page.id, parentId: page.parentId, title: page.title })),
+    pageId,
+    includeChildren,
+  )
+  if (!plan.ok) throw new HttpError(400, plan.message)
+  const byId = new Map(records.map((page) => [page.id, page]))
+  const root = byId.get(pageId)
+  if (!root) throw new HttpError(404, "找不到这个页面")
+  const rootPosition = records.filter((page) => page.parentId === root.parentId).reduce((max, page) => Math.max(max, page.position), -1) + 1
+  const blocks = await prisma.block.findMany({
+    where: { pageId: { in: plan.copies.map((copy) => copy.sourceId) } },
+    orderBy: { position: "asc" },
+  })
+  const idMap = new Map<string, string>()
+  const createdIds: string[] = []
+  await prisma.$transaction(async (tx) => {
+    for (const copy of plan.copies) {
+      const source = byId.get(copy.sourceId)
+      if (!source) throw new HttpError(404, "找不到这个页面")
+      const created = await tx.page.create({
+        data: {
+          title: copy.title,
+          icon: source.icon,
+          cover: source.cover,
+          visibility: "private",
+          pinned: false,
+          position: copy.sourceId === pageId ? rootPosition : source.position,
+          workspaceId,
+          parentId: copy.parentSourceId ? idMap.get(copy.parentSourceId) ?? null : source.parentId,
+          authorId: userId,
+        },
+      })
+      idMap.set(copy.sourceId, created.id)
+      createdIds.push(created.id)
+      const pageBlocks = blocks.filter((block) => block.pageId === copy.sourceId)
+      const blockIds = new Map(pageBlocks.map((block) => [block.id, randomUUID()]))
+      if (pageBlocks.length) {
+        await tx.block.createMany({
+          data: pageBlocks.map((block) => ({
+            id: blockIds.get(block.id) ?? randomUUID(),
+            pageId: created.id,
+            type: block.type,
+            content: block.content,
+            checked: block.checked,
+            language: block.language,
+            marks: block.marks,
+            parentId: block.parentId && blockIds.has(block.parentId) ? blockIds.get(block.parentId) ?? "" : "",
+            collapsed: block.collapsed,
+            src: block.src,
+            width: block.width,
+            position: block.position,
+          })),
+        })
+      }
+    }
+  })
+  const created = await prisma.page.findMany({
+    where: { id: { in: createdIds } },
+    include: { favorites: { where: { userId }, select: { id: true } } },
+  })
+  const order = new Map(createdIds.map((id, index) => [id, index]))
+  created.sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0))
+  return {
+    rootId: idMap.get(pageId) ?? createdIds[0],
+    pages: created.map((page) => toPageMeta(page, page.favorites.length > 0)),
+  }
+}
+
+async function visiblePageMetas(userId: string, workspaceId: string) {
+  const pages = await prisma.page.findMany({
+    where: { workspaceId },
+    include: { favorites: { where: { userId }, select: { id: true } } },
+    orderBy: [{ position: "asc" }, { title: "asc" }],
+  })
+  return pages
+    .filter((page) => canViewPage(userId, { authorId: page.authorId, visibility: asVisibility(page.visibility) }))
+    .map((page) => toPageMeta(page, page.favorites.length > 0))
 }
 
 export async function deletePage(userId: string, pageId: string) {

@@ -27,13 +27,15 @@ function toMeta(page: PageDetail): PageMeta {
 export function PageScreen({ initial }: { initial: PageDetail }) {
   const router = useRouter()
   const toast = useToast()
-  const { user, workspace, pages, upsertPage, createPage, removePageTree } = useWorkspace()
+  const { user, workspace, pages, upsertPage, createPage, duplicatePage, removePageTree } = useWorkspace()
   const [meta, setMeta] = useState(initial)
   const [blocks, setBlocks] = useState(() => ensureBlocks(initial.blocks, initial.id))
   const [status, setStatus] = useState<"saved" | "saving" | "error">("saved")
   const [mode, setMode] = useState<"blocks" | "markdown">("blocks")
   const [markdown, setMarkdown] = useState("")
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [copying, setCopying] = useState(false)
   const [iconOpen, setIconOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const favoriteLock = useRef(false)
@@ -168,6 +170,16 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     } catch (error) {
       toast(error instanceof ApiError ? error.message : "没有删除页面")
       setDeleting(false)
+    }
+  }
+
+  async function copyPage(includeChildren: boolean) {
+    setCopying(true)
+    try {
+      const rootId = await duplicatePage(meta.id, includeChildren)
+      if (rootId) setCopyOpen(false)
+    } finally {
+      setCopying(false)
     }
   }
 
@@ -316,6 +328,14 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           >
             子页面
           </button>
+          <button
+            type="button"
+            data-testid="copy-page"
+            onClick={() => setCopyOpen(true)}
+            className="rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]"
+          >
+            复制
+          </button>
           <div className="inline-flex rounded-md bg-black/[0.04] p-0.5">
             <button type="button" data-testid="mode-blocks" onClick={() => setMode("blocks")} className={cn("rounded px-2 py-1 text-xs", mode === "blocks" && "bg-white shadow-card")}>可视化</button>
             <button
@@ -395,6 +415,22 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         ) : null}
       </div>
 
+      <Dialog open={copyOpen} title="复制页面" onClose={() => setCopyOpen(false)}>
+        <p className="text-sm leading-6 text-muted">副本标题会加上“副本”。可以选择只复制这一页，或连同子页面一起复制。正文、列表和图片都会带上。</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button
+            variant="soft"
+            data-testid="copy-shallow"
+            disabled={copying}
+            onClick={() => void copyPage(false)}
+          >
+            仅此页
+          </Button>
+          <Button data-testid="copy-deep" disabled={copying} onClick={() => void copyPage(true)}>
+            {copying ? "复制中…" : "包含子页面"}
+          </Button>
+        </div>
+      </Dialog>
       <Dialog open={confirmDelete} title="删除页面" onClose={() => setConfirmDelete(false)}>
         <p className="text-sm leading-6 text-muted">删除后，这篇页面和它的子页面都会消失。这个操作不能撤销。</p>
         <div className="mt-4 flex justify-end gap-2">

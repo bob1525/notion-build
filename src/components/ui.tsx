@@ -111,7 +111,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div className="pointer-events-none fixed bottom-4 left-1/2 z-[80] flex w-[min(92vw,420px)] -translate-x-1/2 flex-col gap-2">
         {items.map((item) => (
-          <div key={item.id} className="rounded-lg bg-ink px-3 py-2 text-sm text-white shadow-pop">
+          <div key={item.id} data-testid="toast" className="rounded-lg bg-ink px-3 py-2 text-sm text-white shadow-pop">
             {item.message}
           </div>
         ))}

@@ -20,6 +20,8 @@ type WorkspaceContextValue = {
   upsertPage: (page: PageMeta) => void
   removePageTree: (id: string) => void
   createPage: (input?: { parentId?: string | null; title?: string }) => Promise<PageMeta | null>
+  movePage: (input: { pageId: string; targetId: string; placement: "before" | "after" | "inside" }) => Promise<boolean>
+  duplicatePage: (pageId: string, includeChildren: boolean) => Promise<string | null>
   createWorkspace: (input: { name: string; icon: string; description?: string }) => Promise<WorkspaceDTO>
 }
 
@@ -132,6 +134,45 @@ export function WorkspaceProvider({
     [pathname, router, toast, upsertPage, user.name, workspace.id],
   )
 
+  const movePage = useCallback(
+    async (input: { pageId: string; targetId: string; placement: "before" | "after" | "inside" }) => {
+      try {
+        const next = await api<PageMeta[]>(`/api/workspaces/${workspace.id}/pages/move`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        })
+        setPages(next)
+        return true
+      } catch (error) {
+        toast(error instanceof ApiError ? error.message : "没有移动页面")
+        return false
+      }
+    },
+    [toast, workspace.id],
+  )
+
+  const duplicatePage = useCallback(
+    async (pageId: string, includeChildren: boolean) => {
+      try {
+        const created = await api<{ rootId: string; pages: PageMeta[] }>(`/api/pages/${pageId}/duplicate`, {
+          method: "POST",
+          body: JSON.stringify({ includeChildren }),
+        })
+        setPages((current) => {
+          const merged = new Map(current.map((page) => [page.id, page]))
+          for (const page of created.pages) merged.set(page.id, page)
+          return [...merged.values()]
+        })
+        router.push(`/w/${workspace.id}/p/${created.rootId}`)
+        return created.rootId
+      } catch (error) {
+        toast(error instanceof ApiError ? error.message : "没有复制页面")
+        return null
+      }
+    },
+    [router, toast, workspace.id],
+  )
+
   const createWorkspace = useCallback(
     async (input: { name: string; icon: string; description?: string }) => {
       const created = await api<WorkspaceDTO>("/api/workspaces", {
@@ -158,6 +199,8 @@ export function WorkspaceProvider({
     upsertPage,
     removePageTree,
     createPage,
+    movePage,
+    duplicatePage,
     createWorkspace,
   }
 

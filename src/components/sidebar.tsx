@@ -1,24 +1,29 @@
 "use client"
 
-import { ChevronDown, ChevronRight, FilePlus, Lock, LogOut, Pin, Plus, Search } from "lucide-react"
+import { ChevronDown, ChevronRight, FilePlus, GripVertical, Lock, LogOut, Pin, Plus, Search } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useToast } from "@/components/ui"
 import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 import { useWorkspace } from "@/components/workspace-provider"
 import { api } from "@/lib/api-client"
 import { cn } from "@/lib/cn"
 import { displayTitle } from "@/lib/format"
-import { ancestorIds, type TreeNode } from "@/lib/tree"
+import { ancestorIds, planPageMove, type PagePlacement, type TreeNode } from "@/lib/tree"
 import type { PageMeta } from "@/lib/types"
 
 export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavigate?: () => void }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, workspace, pages, tree, favorites, createPage, openedPage } = useWorkspace()
+  const toast = useToast()
+  const { user, workspace, pages, tree, favorites, createPage, movePage, openedPage } = useWorkspace()
   const currentId = openedPage?.id ?? pathname.match(/\/p\/([^/]+)/)?.[1] ?? null
   const storageKey = `folio-expanded-${workspace.id}`
   const [expanded, setExpanded] = useState<Record<string, boolean> | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [drop, setDrop] = useState<{ id: string; placement: PagePlacement; blocked: boolean } | null>(null)
+  const [moveError, setMoveError] = useState("")
   const pagesRef = useRef(pages)
   pagesRef.current = pages
 
@@ -63,7 +68,60 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
     })
   }, [currentId, pages])
 
-  const isOpen = (id: string) => (expanded ? Boolean(expanded[id]) : true)
+  const isOpen = (id: string) => (expanded ? expanded[id] !== false : true)
+
+  function startPageDrag(pageId: string, event: React.PointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startY = event.clientY
+    let active = false
+
+    const move = (ev: PointerEvent) => {
+      if (!active && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return
+      active = true
+      setDraggingId(pageId)
+      const row = pageRowAt(ev.clientX, ev.clientY)
+      const targetId = row?.dataset.pageId
+      if (!row || !targetId) {
+        setDrop(null)
+        return
+      }
+      const placement = placementOnRow(row, ev.clientY)
+      const plan = planPageMove(pagesRef.current, pageId, targetId, placement)
+      setDrop({ id: targetId, placement, blocked: !plan.ok })
+      setMoveError(plan.ok ? "" : plan.message)
+      if (placement === "inside" && plan.ok) {
+        setExpanded((current) => (current?.[targetId] ? current : { ...(current ?? {}), [targetId]: true }))
+      }
+    }
+
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move)
+      window.removeEventListener("pointerup", up)
+      setDraggingId(null)
+      setDrop(null)
+      if (!active) return
+      const row = pageRowAt(ev.clientX, ev.clientY)
+      const targetId = row?.dataset.pageId
+      if (!row || !targetId) return
+      const placement = placementOnRow(row, ev.clientY)
+      const plan = planPageMove(pagesRef.current, pageId, targetId, placement)
+      if (!plan.ok) {
+        setMoveError(plan.message)
+        toast(plan.message)
+        return
+      }
+      setMoveError("")
+      if (placement === "inside") {
+        setExpanded((current) => ({ ...(current ?? {}), [targetId]: true }))
+      }
+      void movePage({ pageId, targetId, placement })
+    }
+
+    window.addEventListener("pointermove", move)
+    window.addEventListener("pointerup", up)
+  }
 
   async function logout() {
     await api("/api/auth/logout", { method: "POST" })
@@ -108,6 +166,12 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
             </button>
           }
         >
+          <div className="relative">
+          {moveError ? (
+            <p data-testid="page-move-error" role="alert" className="pointer-events-none absolute left-2 right-2 top-0 z-20 rounded bg-white px-2 py-1 text-xs leading-5 text-danger shadow-card">
+              {moveError}
+            </p>
+          ) : null}
           {tree.length === 0 ? (
             <p className="px-2 py-1 text-xs leading-5 text-muted">还没有页面。点加号写下第一篇。</p>
           ) : (
@@ -116,12 +180,16 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
               depth={0}
               currentId={currentId}
               isOpen={isOpen}
+              draggingId={draggingId}
+              drop={drop}
+              onDragStart={startPageDrag}
               onToggle={(id) => setExpanded((current) => ({ ...(current ?? {}), [id]: !isOpen(id) }))}
               onCreate={(parentId) => void createPage({ parentId })}
               onNavigate={onNavigate}
               workspaceId={workspace.id}
             />
           )}
+          </div>
         </Section>
       </div>
       <div className="border-t border-black/[0.06] p-2">
@@ -167,6 +235,9 @@ function PageTree({
   depth,
   currentId,
   isOpen,
+  draggingId,
+  drop,
+  onDragStart,
   onToggle,
   onCreate,
   onNavigate,
@@ -176,6 +247,9 @@ function PageTree({
   depth: number
   currentId: string | null
   isOpen: (id: string) => boolean
+  draggingId: string | null
+  drop: { id: string; placement: PagePlacement; blocked: boolean } | null
+  onDragStart: (pageId: string, event: React.PointerEvent<HTMLButtonElement>) => void
   onToggle: (id: string) => void
   onCreate: (parentId: string) => void
   onNavigate?: () => void
@@ -185,9 +259,41 @@ function PageTree({
     <ul>
       {nodes.map((node) => {
         const open = isOpen(node.id)
+        const marked = drop?.id === node.id ? drop : null
         return (
           <li key={node.id}>
-            <div className="group flex items-center" style={{ paddingLeft: depth * 12 }}>
+            <div
+              data-testid="page-row"
+              data-page-id={node.id}
+              data-dragging={draggingId === node.id ? "true" : "false"}
+              className="group relative flex min-h-7 items-center"
+              style={{ paddingLeft: depth * 12 }}
+            >
+              {marked ? (
+                <span
+                  data-testid="page-drop-indicator"
+                  data-placement={marked.placement}
+                  data-blocked={marked.blocked ? "true" : "false"}
+                  className={cn(
+                    "pointer-events-none absolute z-10",
+                    marked.placement === "before" && "left-2 right-2 top-0 h-0.5",
+                    marked.placement === "after" && "bottom-0 left-2 right-2 h-0.5",
+                    marked.placement === "inside" && "inset-x-1 inset-y-0.5 rounded-md border-2",
+                    marked.blocked
+                      ? marked.placement === "inside" ? "border-danger bg-danger/10" : "bg-danger"
+                      : marked.placement === "inside" ? "border-accent bg-accent/10" : "bg-accent",
+                  )}
+                />
+              ) : null}
+              <button
+                type="button"
+                data-testid="page-drag"
+                aria-label={`拖拽${displayTitle(node.title)}`}
+                onPointerDown={(event) => onDragStart(node.id, event)}
+                className="shrink-0 cursor-grab touch-none rounded p-0.5 text-faint hover:bg-black/[0.06] active:cursor-grabbing"
+              >
+                <GripVertical size={14} />
+              </button>
               {node.children.length > 0 ? (
                 <button
                   type="button"
@@ -224,6 +330,9 @@ function PageTree({
                 depth={depth + 1}
                 currentId={currentId}
                 isOpen={isOpen}
+                draggingId={draggingId}
+                drop={drop}
+                onDragStart={onDragStart}
                 onToggle={onToggle}
                 onCreate={onCreate}
                 onNavigate={onNavigate}
@@ -277,6 +386,23 @@ function PageLink({
       {page.visibility === "private" ? <Lock size={12} className="shrink-0 text-faint" /> : null}
     </Link>
   )
+}
+
+function pageRowAt(x: number, y: number) {
+  for (const element of document.elementsFromPoint(x, y)) {
+    if (!(element instanceof HTMLElement)) continue
+    const row = element.closest("[data-testid='page-row']")
+    if (row instanceof HTMLElement && row.dataset.pageId) return row
+  }
+  return null
+}
+
+function placementOnRow(row: HTMLElement, clientY: number): PagePlacement {
+  const rect = row.getBoundingClientRect()
+  const ratio = rect.height ? (clientY - rect.top) / rect.height : 0.5
+  if (ratio < 0.28) return "before"
+  if (ratio > 0.72) return "after"
+  return "inside"
 }
 
 export function useCurrentTitle() {
