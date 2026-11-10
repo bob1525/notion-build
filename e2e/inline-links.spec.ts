@@ -45,6 +45,21 @@ async function selectText(input: Locator, start: number, end: number) {
   }, { start, end })
 }
 
+async function pressLinkShortcut(input: Locator, start: number, end: number) {
+  await input.evaluate((element, range) => {
+    const field = element as HTMLTextAreaElement
+    field.focus()
+    field.setSelectionRange(range.start, range.end)
+    field.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "k",
+      code: "KeyK",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }))
+  }, { start, end })
+}
+
 test("adds, edits, opens, and removes a link", async ({ page }) => {
   await login(page)
   await createPage(page, `行内链接${Date.now()}`, "前后链接文字")
@@ -65,8 +80,7 @@ test("adds, edits, opens, and removes a link", async ({ page }) => {
   await expect(page.getByTestId("inline-link")).toHaveAttribute("href", "http://127.0.0.1:3000/login")
 
   const again = page.getByTestId("block-input").first()
-  await selectText(again, 2, 4)
-  await again.press("Control+k")
+  await pressLinkShortcut(again, 2, 4)
   await expect(page.getByTestId("search-input")).toHaveCount(0)
   await expect(page.getByTestId("link-url")).toHaveValue("http://127.0.0.1:3000/login")
   await page.getByTestId("link-url").fill("http://127.0.0.1:3000/share/page_welcome")

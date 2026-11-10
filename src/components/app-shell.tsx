@@ -17,9 +17,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        if (event.defaultPrevented) return
-        event.preventDefault()
-        setSearchOpen(true)
+        const keyEvent = event
+        queueMicrotask(() => {
+          if (keyEvent.defaultPrevented) return
+          keyEvent.preventDefault()
+          setSearchOpen(true)
+        })
       }
       if (event.key === "Escape") setNavOpen(false)
     }

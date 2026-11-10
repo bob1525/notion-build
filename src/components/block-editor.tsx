@@ -142,6 +142,10 @@ export function BlockEditor({
   const pendingCaret = useRef<{ id: string; caret: number; anchor?: number } | null>(null)
   const composing = useRef(false)
   const blocksRef = useRef(blocks)
+  const selectionRef = useRef<{ blockId: string; start: number; end: number } | null>(null)
+  const openLinkEditorRef = useRef<(block: BlockDTO, start: number, end: number) => void>(() => {})
+  const onLinkKeyRef = useRef<(event: KeyboardEvent) => void>(() => {})
+  const linkBound = useRef(new WeakSet<HTMLTextAreaElement>())
   const dragSource = useRef<string | null>(null)
   const pendingFormat = useRef<{ blockId: string; marks: InlineMarkType[]; caret: number } | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -156,6 +160,7 @@ export function BlockEditor({
   const [toolbar, setToolbar] = useState<{ left: number; top: number } | null>(null)
   const dropRef = useRef(dropTarget)
   blocksRef.current = blocks
+  selectionRef.current = selection
   dropRef.current = dropTarget
 
   const focusBlock = (id: string, caret: number, anchor = caret) => {
@@ -288,6 +293,28 @@ export function BlockEditor({
       error: "",
       savedHref: existing?.href ?? "",
     })
+  }
+  openLinkEditorRef.current = openLinkEditor
+  onLinkKeyRef.current = (event) => {
+    if (event.defaultPrevented) return
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "k") return
+    const input = event.currentTarget
+    if (!(input instanceof HTMLTextAreaElement)) return
+    const block = blocksRef.current.find((item) => item.id === input.dataset.blockId)
+    if (!block || block.type === "code") return
+    const domStart = input.selectionStart ?? 0
+    const domEnd = input.selectionEnd ?? 0
+    const remembered = selectionRef.current
+    const useRemembered = domStart === domEnd && remembered?.blockId === block.id && remembered.start !== remembered.end
+    const start = useRemembered ? remembered.start : domStart
+    const end = useRemembered ? remembered.end : domEnd
+    const inside = linkCovering(block.marks, start, end)
+    if (start === end && !inside) return
+    event.preventDefault()
+    event.stopPropagation()
+    const from = inside && start === end ? inside.start : Math.min(start, end)
+    const to = inside && start === end ? inside.end : Math.max(start, end)
+    openLinkEditor(block, from, to)
   }
 
   function commitLink(event: FormEvent) {
@@ -552,10 +579,16 @@ export function BlockEditor({
                   )}
                   <textarea
                     ref={(node) => {
-                      if (node) inputRefs.current.set(block.id, node)
-                      else inputRefs.current.delete(block.id)
+                      if (node) {
+                        inputRefs.current.set(block.id, node)
+                        if (!linkBound.current.has(node)) {
+                          linkBound.current.add(node)
+                          node.addEventListener("keydown", (event) => onLinkKeyRef.current(event), true)
+                        }
+                      } else inputRefs.current.delete(block.id)
                     }}
                     data-testid="block-input"
+                    data-block-id={block.id}
                     value={block.content}
                     rows={1}
                     spellCheck={block.type !== "code"}
@@ -604,9 +637,14 @@ export function BlockEditor({
                       const activeIndex = menuView.current.activeIndex
                       const formatItems = menuView.current.formatItems
                       const commands = menuView.current.commands
+                      if (event.defaultPrevented) return
                       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k" && block.type !== "code") {
-                        const start = input.selectionStart
-                        const end = input.selectionEnd
+                        const domStart = input.selectionStart ?? 0
+                        const domEnd = input.selectionEnd ?? 0
+                        const remembered = selectionRef.current
+                        const useRemembered = domStart === domEnd && remembered?.blockId === block.id && remembered.start !== remembered.end
+                        const start = useRemembered ? remembered.start : domStart
+                        const end = useRemembered ? remembered.end : domEnd
                         const inside = linkCovering(block.marks, start, end)
                         if (start !== end || inside) {
                           event.preventDefault()

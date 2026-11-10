@@ -20,7 +20,7 @@ type InlineMark = {
 ## 交互
 
 - 选中文字后，浮动条有链接按钮（`format-link`）。弹出小框填写地址，应用（`link-apply`）或移除（`link-remove`）。
-- 有选区，或者光标在一段链接里时，Cmd/Ctrl+K 打开同一个小框，并 `stopPropagation`，避免同时打开搜索。没有选区、光标也不在链接里时，Cmd/Ctrl+K 仍是搜索。
+- 有选区，或者光标在一段链接里时，Cmd/Ctrl+K 打开同一个小框。监听挂在文本框的捕获阶段，并 `preventDefault`。搜索要等这次按键结束，发现按键没被取消，才打开。没有选区、光标也不在链接里时，Cmd/Ctrl+K 仍是搜索。
 - 编辑态的文字层在文本框下面，并且 `pointer-events: none`。点文字是移动光标。要打开地址，用小框里的「打开」（`link-open`），新标签页，`rel="noopener noreferrer"`。
 - 分享页和 Markdown 预览用真正的 `<a target="_blank">`，可以直接点。
 - 打出 `[文字](https://…)` 会收成 link mark。Markdown 导出写成同样的语法。链接里面的加粗仍然用 `**`。代码块不解析链接。
@@ -60,7 +60,9 @@ type InlineMark = {
 
 编辑层盖在链接上面，所以编辑时不能直接点字打开。这是为了让点文字仍然移动光标。打开动作放在小框的「打开」里。分享页和预览没有文本框，锚点可以点。端到端两边都点过。
 
-Cmd/Ctrl+K 原先是全局搜索。现在只在「有选区」或「光标在链接内」时交给链接框，并 `preventDefault`。搜索的窗口监听看到已经被取消的按键就不再打开。空光标仍打开搜索。GitHub Actions 上第一次用 `page.keyboard.press` 时焦点不在文本框，搜索被打开了；端到端改成对文本框 `press`。
+Cmd/Ctrl+K 原先是全局搜索。编辑器在捕获阶段先看文本框：当前有选区，或者浮动条还记着刚才的选区，或者光标在链接里，就把按键 `preventDefault` 并打开链接框。搜索的冒泡监听看到已取消的按键就不再打开。空光标且不在链接里时，仍打开搜索。
+
+GitHub Actions 上 [42853363714](https://github.com/bob1525/notion-build/actions/runs/42853363714) 和 [42854852535](https://github.com/bob1525/notion-build/actions/runs/42854852535) 都停在 `search-input` 数量为 1。无头 Chromium 里 Playwright 的 `press("Control+k")` 会先聚焦文本框，选区被收成空光标，搜索的窗口监听又先于编辑器拿到按键。端到端改成在同一次调用里设好选区，再向文本框派发 Ctrl+K。文本框在捕获阶段取消按键；搜索改到按键结束后再看 `defaultPrevented`。本地这条用例连续跑过两次。
 
 第一次端到端把链接指到 `/login` 和 `/register`。点击确实打开了新标签，但已登录的会话会立刻被送到 `/w/ws_product`，断言就失败了。这不是链接被改写。测试改成打开公开的欢迎页，新标签停在 `/share/page_welcome`。
 
