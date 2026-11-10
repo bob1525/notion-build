@@ -57,10 +57,10 @@ npm start
 - 快捷键：`#`、`##`、`###`、`-`、`1.`、`[]` 加空格，以及 `---` 和 ` ``` `
 - Markdown 编辑和预览，可以切回块
 - 复制页面。可以选择只复制这一页，或连同子页面一起复制。标题会加上「副本」
-- 按标题和正文搜索，私有页只对作者出现
+- 搜索可以看全部、只看标题或只看正文。命中的词会高亮。私有页不会出现在其他人的结果里
 - 收藏（每个人自己的）和置顶（同级排序，看见这篇的人都会看到）
 - 私有 / 公开。私有只有作者能打开；公开对工作区成员可见，并有一条只读分享链接
-- 空状态、加载骨架、错误提示和保存状态
+- 空状态、加载骨架、错误提示和保存状态用同一套字号和颜色。窄屏侧栏是抽屉，点进页面、新建或切换工作区后会收起，Esc 也能关掉
 - 编辑后约 500 毫秒自动保存。保存失败时提示原因，并可以手动重试
 - 同一页在别处保存过时，后提交的人会看到冲突，可以选择覆盖，或放弃并刷新
 
@@ -78,9 +78,17 @@ npm start
 
 ![编辑器](docs/screenshots/editor.png)
 
-搜索会命中标题和正文，包括代码里的词。
+搜索可以切到全部、标题或正文，命中的词会高亮。
 
 ![搜索](docs/screenshots/search.png)
+
+引用、折叠、代码着色和本地图片。
+
+![新块](docs/screenshots/blocks.png)
+
+别处已经保存过时，后一次修改会停在冲突提示上。
+
+![冲突](docs/screenshots/conflict.png)
 
 Markdown 源码和预览并排。
 
@@ -90,9 +98,13 @@ Markdown 源码和预览并排。
 
 ![分享](docs/screenshots/share.png)
 
-窄屏下侧栏收进抽屉。
+窄屏下侧栏收进抽屉，加号直接可见。
 
 ![移动端](docs/screenshots/mobile.png)
+
+没有页面时，侧栏和主区域用同一套空状态。
+
+![空状态](docs/screenshots/empty.png)
 
 ## 测试
 
@@ -101,11 +113,13 @@ npm test
 npm run test:e2e
 ```
 
-`npm test` 跑单元测试，覆盖块编辑、行内格式、Markdown 往返、搜索排序、页面树拖拽和复制、权限、快捷键、引用、折叠、图片校验、代码着色，以及大页面里未改动块保持原对象。当前 63 个通过。
+`npm test` 跑单元测试，覆盖块编辑、行内格式、Markdown 往返、搜索排序和标题/正文筛选、页面树拖拽和复制、权限矩阵、快捷键、引用、折叠、图片校验、代码着色，以及大页面里未改动块保持原对象。当前 77 个通过。
 
-`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、并发冲突和保存失败重试。当前 45 个通过。第一次跑之前需要 `npx playwright install chromium`。
+`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、并发冲突、保存失败重试、搜索高亮和范围筛选、私有页搜索隔离、窄屏侧栏。当前 48 个通过。第一次跑之前需要 `npx playwright install chromium`。
 
-阶段说明在 [docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。
+320 块页面的计时不在默认端到端里。开发模式用 `npx playwright test --config playwright.bench.config.ts`。生产构建先 `npm run build`，再跑 `npx playwright test --config playwright.bench.prod.config.ts`。两次生产测量里，第 320 块在 130 ms 和 165 ms 出现，文档响应是 42 ms 和 59 ms。
+
+阶段说明和总体验收在 [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md)。分阶段文档：[docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。
 
 重置本地数据：
 

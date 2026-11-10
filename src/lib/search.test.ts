@@ -56,4 +56,27 @@ describe("search", () => {
     expect(snippet.endsWith("…")).toBe(true)
     expect(snippet).toContain("夜航草稿")
   })
+
+  it("can keep only title matches", () => {
+    const hits = searchPages(docs, "里程碑", 20, "title")
+    expect(hits.map((hit) => hit.id)).toEqual(["title-exact", "title-partial"])
+    expect(searchPages(docs, "wordCount", 20, "title")).toEqual([])
+  })
+
+  it("can keep only body matches, including a page whose title also matches", () => {
+    const titled = [
+      ...docs,
+      {
+        id: "both",
+        title: "wordCount 说明",
+        icon: "📄",
+        updatedAt: "2026-11-10T00:00:00.000Z",
+        blocks: [{ content: "正文里也有 wordCount" }],
+      },
+    ]
+    const hits = searchPages(titled, "wordCount", 20, "content")
+    expect(hits.map((hit) => hit.id)).toEqual(["both", "content", "older-content"])
+    expect(hits.every((hit) => hit.match === "content")).toBe(true)
+    expect(searchPages(docs, "里程碑", 20, "content")).toEqual([])
+  })
 })

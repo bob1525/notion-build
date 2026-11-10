@@ -86,7 +86,7 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
               placeholder={isLogin ? "输入密码" : "至少 8 位"}
             />
             {error ? (
-              <p data-testid={isLogin ? "login-error" : "register-error"} className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">
+              <p data-testid={isLogin ? "login-error" : "register-error"} className="rounded-md bg-red-50 px-3 py-2 text-sm leading-6 text-danger">
                 {error}
               </p>
             ) : null}

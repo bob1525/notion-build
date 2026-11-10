@@ -10,6 +10,14 @@ export function canViewPage(userId: string, page: PageAccess) {
   return page.authorId === userId
 }
 
+export function canFindInSearch(userId: string, page: PageAccess) {
+  return canViewPage(userId, page)
+}
+
+export function canSharePage(page: { visibility: Visibility }) {
+  return page.visibility === "public"
+}
+
 export function canEditPage(userId: string, page: PageAccess) {
   return canViewPage(userId, page)
 }

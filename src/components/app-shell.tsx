@@ -20,6 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         event.preventDefault()
         setSearchOpen(true)
       }
+      if (event.key === "Escape") setNavOpen(false)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -30,16 +31,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {navOpen ? (
         <button className="fixed inset-0 z-30 bg-black/30 md:hidden" aria-label="关闭侧栏" onClick={() => setNavOpen(false)} />
       ) : null}
-      <div className={`${navOpen ? "fixed inset-y-0 left-0 z-40 flex" : "hidden"} md:static md:flex`}>
+      <div className={`${navOpen ? "fixed inset-y-0 left-0 z-40 flex shadow-pop" : "hidden"} md:static md:flex md:shadow-none`}>
         <Sidebar onSearch={() => { setSearchOpen(true); setNavOpen(false) }} onNavigate={() => setNavOpen(false)} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 items-center gap-2 border-b border-black/[0.06] px-3 md:hidden">
-          <button type="button" data-testid="nav-toggle" aria-label="打开侧栏" onClick={() => setNavOpen(true)} className="rounded-md p-1.5 hover:bg-black/[0.05]">
+          <button type="button" data-testid="nav-toggle" aria-label="打开侧栏" onClick={() => setNavOpen(true)} className="grid h-11 w-11 place-items-center rounded-md hover:bg-black/[0.05]">
             <Menu size={18} />
           </button>
           <div className="min-w-0 flex-1 truncate text-sm font-medium">{title}</div>
-          <button type="button" data-testid="search-open-mobile" aria-label="搜索" onClick={() => setSearchOpen(true)} className="rounded-md p-1.5 hover:bg-black/[0.05]">
+          <button type="button" data-testid="search-open-mobile" aria-label="搜索" onClick={() => setSearchOpen(true)} className="grid h-11 w-11 place-items-center rounded-md hover:bg-black/[0.05]">
             <Search size={18} />
           </button>
         </header>

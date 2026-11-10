@@ -1,17 +1,20 @@
 "use client"
 
 import { Search } from "lucide-react"
+import type { ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { useWorkspace } from "@/components/workspace-provider"
 import { ApiError, api } from "@/lib/api-client"
 import { displayTitle } from "@/lib/format"
+import type { SearchScope } from "@/lib/search"
 import type { SearchHit } from "@/lib/types"
 
 export function SearchDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter()
   const { workspace, pages } = useWorkspace()
   const [query, setQuery] = useState("")
+  const [scope, setScope] = useState<SearchScope>("all")
   const [hits, setHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -47,7 +50,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
       setError(null)
       try {
         const data = await api<SearchHit[]>(
-          `/api/workspaces/${workspace.id}/search?q=${encodeURIComponent(needle)}`,
+          `/api/workspaces/${workspace.id}/search?q=${encodeURIComponent(needle)}&scope=${scope}`,
           { signal: controller.signal },
         )
         setHits(data)
@@ -63,7 +66,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [query, workspace.id])
+  }, [query, scope, workspace.id])
 
   const results = query.trim() ? hits : recent
 
@@ -73,7 +76,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center px-4 pt-[12vh]">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center px-3 pb-3 sm:items-start sm:px-4 sm:pb-0 sm:pt-[12vh]">
       <button className="absolute inset-0 bg-black/30" aria-label="关闭搜索" onClick={onClose} />
       <div role="dialog" aria-modal="true" aria-label="搜索页面" className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-pop">
         <div className="flex items-center gap-2 border-b border-black/[0.06] px-3">
@@ -99,13 +102,33 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
             className="h-12 w-full bg-transparent text-base outline-none placeholder:text-black/30"
           />
         </div>
-        <div className="max-h-[360px] overflow-y-auto p-2">
-          <div className="px-2 py-1 text-[11px] font-medium text-faint">
-            {query.trim() ? (loading ? "搜索中…" : "结果") : "最近编辑"}
+        <div className="max-h-[min(360px,50dvh)] overflow-y-auto p-2">
+          <div className="flex items-center justify-between gap-2 px-2 py-1">
+            <div className="text-[11px] font-medium text-faint">
+              {query.trim() ? (loading ? "正在搜索…" : "结果") : "最近编辑"}
+            </div>
+            <div className="flex rounded-md bg-black/[0.04] p-0.5" role="group" aria-label="搜索范围">
+              {([
+                ["all", "全部"],
+                ["title", "标题"],
+                ["content", "正文"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-testid={`search-scope-${value}`}
+                  aria-pressed={scope === value}
+                  onClick={() => setScope(value)}
+                  className={`rounded px-2 py-0.5 text-xs ${scope === value ? "bg-white shadow-card" : "text-muted"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          {error ? <p className="px-2 py-6 text-center text-sm text-danger">{error}</p> : null}
+          {error ? <p className="px-2 py-6 text-center text-sm leading-6 text-danger">{error}</p> : null}
           {!error && results.length === 0 ? (
-            <p data-testid="search-empty" className="px-2 py-8 text-center text-sm text-muted">
+            <p data-testid="search-empty" className="px-2 py-8 text-center text-sm leading-6 text-muted">
               {query.trim() ? `没有找到“${query.trim()}”` : "这个工作区还没有可搜索的页面"}
             </p>
           ) : null}
@@ -115,6 +138,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
               type="button"
               data-testid="search-result"
               data-title={result.title}
+              data-match={result.match}
               onMouseEnter={() => setActive(index)}
               onClick={() => open(result.id)}
               className={`flex w-full items-start gap-2 rounded-md px-2 py-2 text-left ${index === active ? "bg-black/[0.05]" : ""}`}
@@ -139,13 +163,23 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
 
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>
-  const index = text.toLowerCase().indexOf(query.toLowerCase())
-  if (index < 0) return <>{text}</>
-  return (
-    <>
-      {text.slice(0, index)}
-      <mark className="rounded-sm bg-[#fdecc8] text-inherit">{text.slice(index, index + query.length)}</mark>
-      {text.slice(index + query.length)}
-    </>
-  )
+  const needle = query.toLowerCase()
+  const lower = text.toLowerCase()
+  const parts: ReactNode[] = []
+  let cursor = 0
+  while (cursor < text.length) {
+    const index = lower.indexOf(needle, cursor)
+    if (index < 0) {
+      parts.push(text.slice(cursor))
+      break
+    }
+    if (index > cursor) parts.push(text.slice(cursor, index))
+    parts.push(
+      <mark key={index} data-testid="search-highlight" className="rounded-sm bg-[#fdecc8] text-inherit">
+        {text.slice(index, index + needle.length)}
+      </mark>,
+    )
+    cursor = index + needle.length
+  }
+  return <>{parts}</>
 }

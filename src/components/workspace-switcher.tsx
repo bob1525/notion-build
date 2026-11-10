@@ -9,7 +9,7 @@ import { EMOJIS } from "@/lib/constants"
 import { cn } from "@/lib/cn"
 import { ApiError } from "@/lib/api-client"
 
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const router = useRouter()
   const { workspace, workspaces, createWorkspace } = useWorkspace()
   const [open, setOpen] = useState(false)
@@ -62,7 +62,10 @@ export function WorkspaceSwitcher() {
                 data-name={item.name}
                 onClick={() => {
                   setOpen(false)
-                  if (item.id !== workspace.id) router.push(`/w/${item.id}`)
+                  if (item.id !== workspace.id) {
+                    onNavigate?.()
+                    router.push(`/w/${item.id}`)
+                  }
                 }}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-black/[0.04]"
               >

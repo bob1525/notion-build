@@ -41,7 +41,7 @@ export function StartForm({ name }: { name: string }) {
           className="w-full rounded-md border border-black/10 px-3 py-2 outline-none"
           required
         />
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm leading-6 text-danger">{error}</p> : null}
         <Button type="submit" disabled={pending}>{pending ? "创建中…" : "创建工作区"}</Button>
       </form>
     </main>

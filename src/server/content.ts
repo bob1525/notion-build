@@ -7,8 +7,8 @@ import { normalizeMarks } from "@/lib/rich-text"
 import type { InlineMark } from "@/lib/types"
 import { prisma } from "@/lib/db"
 import { asBlockType, asCover, asRole, asVisibility, clampIcon, cleanTitle, displayTitle, pickWorkspaceId } from "@/lib/format"
-import { canDeletePage, canEditPage, canManageVisibility, canViewPage } from "@/lib/permissions"
-import { searchPages } from "@/lib/search"
+import { canDeletePage, canEditPage, canFindInSearch, canManageVisibility, canSharePage, canViewPage } from "@/lib/permissions"
+import { searchPages, type SearchScope } from "@/lib/search"
 import { breadcrumbTitles, planPageCopy, planPageMove } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta, SearchHit, UserDTO, WorkspaceDTO } from "@/lib/types"
 import { readRememberedWorkspace } from "@/server/auth"
@@ -195,7 +195,7 @@ export async function loadPageDetail(
   }
 }
 
-export async function searchWorkspace(userId: string, workspaceId: string, query: string): Promise<SearchHit[]> {
+export async function searchWorkspace(userId: string, workspaceId: string, query: string, scope: SearchScope = "all"): Promise<SearchHit[]> {
   const membership = await prisma.workspaceMember.findUnique({
     where: { userId_workspaceId: { userId, workspaceId } },
   })
@@ -204,7 +204,7 @@ export async function searchWorkspace(userId: string, workspaceId: string, query
     where: { workspaceId },
     include: { blocks: { select: { content: true }, orderBy: { position: "asc" } } },
   })
-  const visible = pages.filter((page) => canViewPage(userId, { authorId: page.authorId, visibility: asVisibility(page.visibility) }))
+  const visible = pages.filter((page) => canFindInSearch(userId, { authorId: page.authorId, visibility: asVisibility(page.visibility) }))
   const matches = searchPages(
     visible.map((page) => ({
       id: page.id,
@@ -214,6 +214,8 @@ export async function searchWorkspace(userId: string, workspaceId: string, query
       blocks: page.blocks,
     })),
     query,
+    20,
+    scope,
   )
   const byId = new Map(visible.map((page) => [page.id, page]))
   return matches.map((match) => ({
@@ -553,7 +555,7 @@ export async function loadPublicPage(pageId: string) {
       blocks: { orderBy: { position: "asc" } },
     },
   })
-  if (!page || asVisibility(page.visibility) !== "public") return null
+  if (!page || !canSharePage({ visibility: asVisibility(page.visibility) })) return null
   return {
     id: page.id,
     title: displayTitle(page.title),

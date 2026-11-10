@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { BlockView } from "@/components/block-view"
-import { Logo } from "@/components/ui"
+import { Button, EmptyState, Logo } from "@/components/ui"
 import { cn } from "@/lib/cn"
 import { formatDateTime } from "@/lib/format"
 import { loadPublicPage } from "@/server/content"
@@ -17,11 +17,15 @@ export default async function SharePage({ params }: { params: Promise<{ pageId: 
   const page = await loadPublicPage((await params).pageId)
   if (!page) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-6 text-center">
+      <main className="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center px-6">
         <Logo />
-        <h1 data-testid="share-missing" className="mt-8 text-2xl font-semibold">找不到这篇公开页</h1>
-        <p className="mt-2 text-sm leading-6 text-muted">它可能是私有的，或者链接已经失效。私有页面不会通过分享地址暴露。</p>
-        <Link href="/login" className="mt-6 text-sm underline">登录 Folio</Link>
+        <EmptyState
+          testId="share-missing"
+          icon="🔗"
+          title="找不到这篇公开页"
+          body="它可能是私有的，或者链接已经失效。私有页面不会通过分享地址暴露。"
+          action={<Link href="/login"><Button>登录 Folio</Button></Link>}
+        />
       </main>
     )
   }

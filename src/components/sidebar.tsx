@@ -130,9 +130,9 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
   }
 
   return (
-    <aside data-testid="sidebar" className="flex h-full w-[272px] shrink-0 flex-col bg-sidebar text-ink">
+    <aside data-testid="sidebar" className="flex h-full w-[min(272px,calc(100vw-3rem))] shrink-0 flex-col bg-sidebar text-ink md:w-[272px]">
       <div className="px-2 pt-2">
-        <WorkspaceSwitcher />
+        <WorkspaceSwitcher onNavigate={onNavigate} />
         <button
           type="button"
           data-testid="search-open"
@@ -159,7 +159,10 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
               type="button"
               data-testid="new-page"
               aria-label="新建页面"
-              onClick={() => void createPage()}
+              onClick={() => {
+                onNavigate?.()
+                void createPage()
+              }}
               className="rounded p-1 text-muted hover:bg-black/[0.06]"
             >
               <Plus size={15} />
@@ -173,7 +176,7 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
             </p>
           ) : null}
           {tree.length === 0 ? (
-            <p className="px-2 py-1 text-xs leading-5 text-muted">还没有页面。点加号写下第一篇。</p>
+            <p className="px-2 py-2 text-sm leading-6 text-muted">还没有页面。点加号写下第一篇。</p>
           ) : (
             <PageTree
               nodes={tree}
@@ -195,7 +198,10 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
       <div className="border-t border-black/[0.06] p-2">
         <button
           type="button"
-          onClick={() => void createPage()}
+          onClick={() => {
+            onNavigate?.()
+            void createPage()
+          }}
           className="mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-black/[0.04]"
         >
           <FilePlus size={15} />
@@ -319,7 +325,7 @@ function PageTree({
                 data-testid="add-child"
                 aria-label={`在${displayTitle(node.title)}下新建子页面`}
                 onClick={() => onCreate(node.id)}
-                className="rounded p-1 text-muted opacity-0 hover:bg-black/[0.06] group-hover:opacity-100"
+                className="rounded p-1 text-muted opacity-100 hover:bg-black/[0.06] md:opacity-0 md:group-hover:opacity-100"
               >
                 <Plus size={14} />
               </button>

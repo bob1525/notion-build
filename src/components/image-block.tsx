@@ -108,7 +108,7 @@ export function ImageBlock({
           </button>
         ))}
       </div>
-      {error ? <p data-testid="image-error" className="mt-2 text-sm text-danger">{error}</p> : null}
+      {error ? <p data-testid="image-error" className="mt-2 text-sm leading-6 text-danger">{error}</p> : null}
     </div>
   )
 }

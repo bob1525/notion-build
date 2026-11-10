@@ -19,15 +19,17 @@ export function makeSnippet(text: string, query: string, radius = 36) {
   return `${start > 0 ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`
 }
 
-export function searchPages(docs: SearchDoc[], query: string, limit = 20): SearchMatch[] {
+export type SearchScope = "all" | "title" | "content"
+
+export function searchPages(docs: SearchDoc[], query: string, limit = 20, scope: SearchScope = "all"): SearchMatch[] {
   const needle = query.trim().toLowerCase()
   if (!needle) return []
 
   const hits: SearchMatch[] = []
   for (const doc of docs) {
     const title = doc.title.trim() || "未命名"
-    const titleIndex = title.toLowerCase().indexOf(needle)
-    if (titleIndex >= 0) {
+    const titleHit = scope !== "content" && title.toLowerCase().includes(needle)
+    if (titleHit) {
       const normalized = title.toLowerCase()
       const score = normalized === needle ? 100 : normalized.startsWith(needle) ? 80 : 60
       hits.push({
@@ -43,7 +45,7 @@ export function searchPages(docs: SearchDoc[], query: string, limit = 20): Searc
     }
 
     const blob = doc.blocks.map((block) => block.content).join("\n")
-    if (blob.toLowerCase().includes(needle)) {
+    if (scope !== "title" && blob.toLowerCase().includes(needle)) {
       hits.push({
         id: doc.id,
         title,
