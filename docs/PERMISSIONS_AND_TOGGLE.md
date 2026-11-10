@@ -80,4 +80,4 @@
 
 侧栏偏好和块的折叠不是一回事。块的 `collapsed` 还在正文里，刷新后所有人看到同一个收起状态。这次只把侧栏树从浏览器本地存储改成按用户保存。
 
-GitHub Actions 链接补在下一节。
+GitHub Actions 上 [42878117797](https://github.com/bob1525/notion-build/actions/runs/42878117797) 通过。lint、typecheck 和 104 个单元测试通过，52 个端到端通过，Playwright 用时 6.4 分钟。同一提交的 push 运行 [42878103860](https://github.com/bob1525/notion-build/actions/runs/42878103860) 也通过，Playwright 用时 7.9 分钟。
