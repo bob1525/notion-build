@@ -14,7 +14,7 @@ export const BLOCK_TYPES = [
 ] as const
 
 export type BlockType = (typeof BLOCK_TYPES)[number]
-export type Visibility = "private" | "public"
+export type Visibility = "private" | "public" | "read"
 export type Role = "owner" | "member"
 export type CoverId = "" | "warm" | "mist" | "moss" | "ink" | "rose"
 

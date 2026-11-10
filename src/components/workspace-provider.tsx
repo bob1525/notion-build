@@ -23,6 +23,8 @@ type WorkspaceContextValue = {
   movePage: (input: { pageId: string; targetId: string; placement: "before" | "after" | "inside" }) => Promise<boolean>
   duplicatePage: (pageId: string, includeChildren: boolean) => Promise<string | null>
   createWorkspace: (input: { name: string; icon: string; description?: string }) => Promise<WorkspaceDTO>
+  sidebarExpanded: Record<string, boolean>
+  saveSidebar: (sidebar: Record<string, boolean>) => void
 }
 
 function blankPage(page: PageMeta, authorName: string): PageDetail {
@@ -48,12 +50,14 @@ export function WorkspaceProvider({
   workspaces: initialWorkspaces,
   workspace,
   pages: initialPages,
+  sidebarExpanded,
   children,
 }: {
   user: UserDTO
   workspaces: WorkspaceDTO[]
   workspace: WorkspaceDTO
   pages: PageMeta[]
+  sidebarExpanded: Record<string, boolean>
   children: React.ReactNode
 }) {
   const router = useRouter()
@@ -173,6 +177,17 @@ export function WorkspaceProvider({
     [router, toast, workspace.id],
   )
 
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveSidebar = useCallback(
+    (sidebar: Record<string, boolean>) => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => {
+        void api("/api/me/ui", { method: "PUT", body: JSON.stringify({ workspaceId: workspace.id, sidebar }) }).catch(() => undefined)
+      }, 200)
+    },
+    [workspace.id],
+  )
+
   const createWorkspace = useCallback(
     async (input: { name: string; icon: string; description?: string }) => {
       const created = await api<WorkspaceDTO>("/api/workspaces", {
@@ -202,6 +217,8 @@ export function WorkspaceProvider({
     movePage,
     duplicatePage,
     createWorkspace,
+    sidebarExpanded,
+    saveSidebar,
   }
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>

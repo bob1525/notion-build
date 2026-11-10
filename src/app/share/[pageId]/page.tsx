@@ -43,7 +43,9 @@ export default async function SharePage({ params }: { params: Promise<{ pageId: 
       <article className="mx-auto w-full max-w-[760px] px-5 py-10">
         <div className="text-[56px] leading-none">{page.icon}</div>
         <h1 className="mt-3 text-[40px] font-bold tracking-tight">{page.title}</h1>
-        <p className="mb-8 mt-2 text-xs text-faint">{page.authorName} · 编辑于 {formatDateTime(page.updatedAt)} · 公开只读</p>
+        <p className="mb-8 mt-2 text-xs text-faint">
+          {page.authorName} · 编辑于 {formatDateTime(page.updatedAt)} · {page.visibility === "read" ? "公开只读" : "成员可编辑，此链接只读"}
+        </p>
         <BlockView blocks={page.blocks} />
       </article>
     </main>

@@ -22,7 +22,9 @@ export function asBlockType(value: string): BlockType {
 }
 
 export function asVisibility(value: string): Visibility {
-  return value === "public" ? "public" : "private"
+  if (value === "public" || value === "edit" || value === "editable") return "public"
+  if (value === "read" || value === "readonly" || value === "public-read" || value === "public_read") return "read"
+  return "private"
 }
 
 export function asRole(value: string): Role {

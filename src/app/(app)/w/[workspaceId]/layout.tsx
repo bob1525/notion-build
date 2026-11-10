@@ -25,6 +25,7 @@ export default async function WorkspaceLayout({
       workspace={bundle.workspace}
       workspaces={bundle.workspaces}
       pages={bundle.pages}
+      sidebarExpanded={bundle.sidebar}
     >
       <AppShell>{children}</AppShell>
     </WorkspaceProvider>

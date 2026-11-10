@@ -7,7 +7,8 @@ import { normalizeMarks } from "@/lib/rich-text"
 import type { InlineMark } from "@/lib/types"
 import { prisma } from "@/lib/db"
 import { asBlockType, asCover, asRole, asVisibility, clampIcon, cleanTitle, displayTitle, pickWorkspaceId } from "@/lib/format"
-import { canDeletePage, canEditPage, canFindInSearch, canManageVisibility, canSharePage, canViewPage } from "@/lib/permissions"
+import { canDeletePage, canEditPage, canFindInSearch, canManageVisibility, canMovePage, canSharePage, canViewPage, pageSaveError } from "@/lib/permissions"
+import { readSidebar, writeSidebar } from "@/lib/ui-state"
 import { searchPages, type SearchScope } from "@/lib/search"
 import { breadcrumbTitles, planPageCopy, planPageMove } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta, SearchHit, UserDTO, WorkspaceDTO } from "@/lib/types"
@@ -52,7 +53,7 @@ export const updatePageSchema = z.object({
   title: z.string().max(200),
   icon: z.string().max(32),
   cover: z.string().max(20),
-  visibility: z.enum(["private", "public"]),
+  visibility: z.enum(["private", "public", "read"]),
   pinned: z.boolean(),
   blocks: z.array(blockInputSchema).max(400),
   baseRevision: z.number().int().nonnegative(),
@@ -98,6 +99,13 @@ function toBlock(block: {
     src: type === "image" ? (block.src ?? "") : "",
     width: type === "image" ? width || "medium" : "",
   }
+}
+
+function pageContentChanged(current: { title: string; icon: string; cover: string; blocks: BlockDTO[] }, input: z.infer<typeof updatePageSchema>, blocks: BlockDTO[]) {
+  if (cleanTitle(input.title) !== cleanTitle(current.title)) return true
+  if (clampIcon(input.icon, "📄") !== clampIcon(current.icon, "📄")) return true
+  if (asCover(input.cover) !== asCover(current.cover)) return true
+  return JSON.stringify(blocks) !== JSON.stringify(current.blocks)
 }
 
 function toPageMeta(page: Page, favorited: boolean): PageMeta {
@@ -161,7 +169,33 @@ export async function getWorkspaceBundle(userId: string, workspaceId: string) {
     pages: pages.filter((page) => canViewPage(userId, { ...page, visibility: asVisibility(page.visibility) })).map((page) =>
       toPageMeta(page, page.favorites.length > 0),
     ),
+    sidebar: await sidebarPreference(userId, workspaceId),
   }
+}
+
+async function sidebarPreference(userId: string, workspaceId: string) {
+  const saved = await prisma.userPreference.findUnique({ where: { userId } })
+  return readSidebar(saved?.sidebar, workspaceId)
+}
+
+export async function saveSidebarPreference(userId: string, workspaceId: string, sidebar: Record<string, boolean>) {
+  const membership = await prisma.workspaceMember.findUnique({
+    where: { userId_workspaceId: { userId, workspaceId } },
+  })
+  if (!membership) throw new HttpError(404, "找不到这个工作区")
+  const current = await prisma.userPreference.findUnique({ where: { userId } })
+  let next: string
+  try {
+    next = writeSidebar(current?.sidebar, workspaceId, sidebar)
+  } catch {
+    throw new HttpError(400, "工作区标识无效")
+  }
+  await prisma.userPreference.upsert({
+    where: { userId },
+    update: { sidebar: next },
+    create: { userId, sidebar: next },
+  })
+  return readSidebar(next, workspaceId)
 }
 
 export async function loadPageDetail(
@@ -305,6 +339,9 @@ export async function createPage(userId: string, workspaceId: string, input: z.i
     if (parent.kind !== "ok" || parent.page.workspaceId !== workspaceId) {
       throw new HttpError(400, "无法在这个页面下创建子页面")
     }
+    if (!canEditPage(userId, parent.page, asRole(membership.role))) {
+      throw new HttpError(403, "你不能在这篇只读页面下新建子页面")
+    }
   }
   const aggregate = await prisma.page.aggregate({
     where: { workspaceId, parentId },
@@ -330,10 +367,18 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
   const loaded = await loadPageDetail(userId, pageId)
   if (loaded.kind === "missing") throw new HttpError(404, "找不到这个页面")
   if (loaded.kind === "forbidden") throw new HttpError(403, "你没有编辑这个页面的权限")
-  if (input.visibility !== loaded.page.visibility && !canManageVisibility(userId, loaded.role, loaded.page)) {
-    throw new HttpError(403, "只有作者或工作区所有者可以修改可见性")
-  }
   const blocks = normalizeBlocks(input.blocks)
+  const denied = pageSaveError(
+    userId,
+    loaded.role,
+    loaded.page,
+    {
+      visibility: input.visibility,
+      pinned: input.pinned,
+      contentChanged: pageContentChanged(loaded.page, input, blocks),
+    },
+  )
+  if (denied) throw new HttpError(403, denied)
   let conflicted = false
   await prisma.$transaction(async (tx) => {
     const gate = await tx.page.updateMany({
@@ -392,7 +437,7 @@ export async function moveWorkspacePage(userId: string, workspaceId: string, inp
   const target = records.find((page) => page.id === input.targetId)
   if (!source) throw new HttpError(404, "找不到这个页面")
   if (!target) throw new HttpError(400, "找不到目标页面")
-  if (!canEditPage(userId, { authorId: source.authorId, visibility: asVisibility(source.visibility) })) {
+  if (!canMovePage(userId, asRole(membership.role), { authorId: source.authorId, visibility: asVisibility(source.visibility) })) {
     throw new HttpError(403, "你没有移动这个页面的权限")
   }
   if (!canViewPage(userId, { authorId: target.authorId, visibility: asVisibility(target.visibility) })) {
@@ -556,8 +601,10 @@ export async function loadPublicPage(pageId: string) {
     },
   })
   if (!page || !canSharePage({ visibility: asVisibility(page.visibility) })) return null
+  const visibility = asVisibility(page.visibility)
   return {
     id: page.id,
+    visibility,
     title: displayTitle(page.title),
     icon: page.icon,
     cover: asCover(page.cover),

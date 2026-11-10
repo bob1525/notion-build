@@ -30,7 +30,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ works
         testId="forbidden"
         icon="🔒"
         title="这是一篇私有页面"
-        body="只有作者本人可以打开。需要协作时，作者可以把可见性改成公开。"
+        body="只有作者本人可以打开。需要协作时，作者可以改成公开只读或公开可编辑。"
         action={<Link href={`/w/${workspaceId}`} className="rounded-md bg-ink px-3 py-2 text-sm text-white">返回工作区</Link>}
       />
     )

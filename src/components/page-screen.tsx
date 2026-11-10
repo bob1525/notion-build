@@ -1,10 +1,11 @@
 "use client"
 
-import { ChevronRight, Globe, Link2, Lock, Pin, Star, Trash2 } from "lucide-react"
+import { ChevronRight, Eye, Globe, Link2, Lock, Pin, Star, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { BlockEditor, type BlockEditorHandle } from "@/components/block-editor"
+import { BlockView } from "@/components/block-view"
 import { blocksFromMarkdown, markdownDraftFrom, MarkdownPane } from "@/components/markdown-pane"
 import { Button, Dialog, useToast } from "@/components/ui"
 import { useWorkspace } from "@/components/workspace-provider"
@@ -13,7 +14,7 @@ import { ensureBlocks } from "@/lib/blocks"
 import { COVERS, EMOJIS } from "@/lib/constants"
 import { cn } from "@/lib/cn"
 import { displayTitle, formatDateTime } from "@/lib/format"
-import { canDeletePage, canManageVisibility } from "@/lib/permissions"
+import { canDeletePage, canEditPage, canManageVisibility } from "@/lib/permissions"
 import { comparePages } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta } from "@/lib/types"
 
@@ -265,8 +266,9 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     parentId = parent.parentId
   }
   const children = pages.filter((page) => page.parentId === meta.id).sort(comparePages)
+  const canEdit = canEditPage(user.id, meta, workspace.role)
   const canDelete = canDeletePage(user.id, workspace.role, meta)
-  const canVisibility = canManageVisibility(user.id, workspace.role, meta)
+  const canManage = canManageVisibility(user.id, workspace.role, meta)
   const blank = blocks.length === 1 && blocks[0]?.type === "paragraph" && !blocks[0].content
   const statusText = status === "saving" ? "保存中…" : status === "error" ? "保存失败" : status === "conflict" ? "发现冲突" : "已保存"
 
@@ -291,8 +293,9 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
             type="button"
             data-testid="page-icon"
             aria-label="更换图标"
+            disabled={!canEdit}
             onClick={() => setIconOpen((open) => !open)}
-            className="rounded-lg px-1 text-[56px] leading-none hover:bg-black/[0.04]"
+            className="rounded-lg px-1 text-[56px] leading-none hover:bg-black/[0.04] disabled:hover:bg-transparent"
           >
             {meta.icon || "📄"}
           </button>
@@ -322,9 +325,13 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           data-testid="page-title"
           value={meta.title}
           rows={1}
+          readOnly={!canEdit}
           placeholder="未命名"
           aria-label="页面标题"
-          onChange={(event) => commitMeta({ title: event.target.value })}
+          onChange={(event) => {
+            if (!canEdit) return
+            commitMeta({ title: event.target.value })
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault()
@@ -343,7 +350,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
               type="button"
               data-testid="visibility-private"
               aria-pressed={meta.visibility === "private"}
-              disabled={!canVisibility}
+              disabled={!canManage}
               onClick={() => commitMeta({ visibility: "private" })}
               className={cn("inline-flex items-center gap-1 rounded px-2 py-1 text-xs", meta.visibility === "private" ? "bg-white shadow-card" : "text-muted")}
             >
@@ -351,13 +358,23 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
             </button>
             <button
               type="button"
+              data-testid="visibility-read"
+              aria-pressed={meta.visibility === "read"}
+              disabled={!canManage}
+              onClick={() => commitMeta({ visibility: "read" })}
+              className={cn("inline-flex items-center gap-1 rounded px-2 py-1 text-xs", meta.visibility === "read" ? "bg-white shadow-card" : "text-muted")}
+            >
+              <Eye size={12} /> 只读
+            </button>
+            <button
+              type="button"
               data-testid="visibility-public"
               aria-pressed={meta.visibility === "public"}
-              disabled={!canVisibility}
+              disabled={!canManage}
               onClick={() => commitMeta({ visibility: "public" })}
               className={cn("inline-flex items-center gap-1 rounded px-2 py-1 text-xs", meta.visibility === "public" ? "bg-white shadow-card" : "text-muted")}
             >
-              <Globe size={12} /> 公开
+              <Globe size={12} /> 可编辑
             </button>
           </div>
           <button
@@ -374,6 +391,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
             type="button"
             data-testid="pin-button"
             aria-pressed={meta.pinned}
+            disabled={!canManage}
             onClick={() => commitMeta({ pinned: !meta.pinned })}
             className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]", meta.pinned && "text-accent")}
           >
@@ -383,6 +401,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           <button
             type="button"
             data-testid="add-subpage"
+            disabled={!canEdit}
             onClick={() => void createPage({ parentId: meta.id })}
             className="rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]"
           >
@@ -396,6 +415,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           >
             复制
           </button>
+          {canEdit ? (
           <div className="inline-flex rounded-md bg-black/[0.04] p-0.5">
             <button type="button" data-testid="mode-blocks" onClick={() => setMode("blocks")} className={cn("rounded px-2 py-1 text-xs", mode === "blocks" && "bg-white shadow-card")}>可视化</button>
             <button
@@ -410,7 +430,8 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
               Markdown
             </button>
           </div>
-          {meta.visibility === "public" ? (
+          ) : null}
+          {meta.visibility !== "private" ? (
             <button type="button" data-testid="copy-share" onClick={() => void copyShare()} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]">
               <Link2 size={13} /> 复制链接
             </button>
@@ -435,7 +456,10 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
               key={cover.id || "none"}
               type="button"
               aria-label={`封面 ${cover.label}`}
-              onClick={() => commitMeta({ cover: cover.id })}
+              disabled={!canEdit}
+              onClick={() => {
+                if (canEdit) commitMeta({ cover: cover.id })
+              }}
               className={cn(
                 "h-5 w-5 rounded-full border border-black/10",
                 cover.id ? `cover-${cover.id}` : "bg-white",
@@ -443,10 +467,19 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
               )}
             />
           ))}
-          <span className="ml-1">{meta.visibility === "private" ? "只有你能打开这篇" : "工作区成员可见，公开链接可只读"}</span>
+          <span data-testid="visibility-hint" className="ml-1">
+            {meta.visibility === "private"
+              ? "只有你能打开这篇"
+              : meta.visibility === "read"
+                ? "其他成员和公开链接都只能阅读"
+                : "其他成员可以改正文，但不能改权限、置顶或删除。公开链接仍只能阅读"}
+          </span>
         </div>
 
-        {mode === "blocks" ? (
+        {!canEdit ? <p data-testid="page-readonly" className="mb-4 text-sm text-muted">你只能阅读这篇。改权限、置顶和删除仍然留给作者或工作区所有者。</p> : null}
+        {!canEdit ? (
+          <BlockView blocks={blocks} />
+        ) : mode === "blocks" ? (
           <BlockEditor editorRef={editorRef} blocks={blocks} onChange={commitBlocks} />
         ) : (
           <MarkdownPane source={markdown} blocks={blocks} onChange={(source) => {

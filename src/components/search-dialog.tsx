@@ -29,7 +29,7 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
           id: page.id,
           title: displayTitle(page.title),
           icon: page.icon,
-          snippet: page.visibility === "private" ? "私有页面" : "公开页面",
+          snippet: page.visibility === "private" ? "私有页面" : page.visibility === "read" ? "公开只读" : "公开可编辑",
           breadcrumb: "",
           match: "title" as const,
         })),

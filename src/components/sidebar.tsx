@@ -10,6 +10,7 @@ import { useWorkspace } from "@/components/workspace-provider"
 import { api } from "@/lib/api-client"
 import { cn } from "@/lib/cn"
 import { displayTitle } from "@/lib/format"
+import { canMovePage } from "@/lib/permissions"
 import { ancestorIds, planPageMove, type PagePlacement, type TreeNode } from "@/lib/tree"
 import type { PageMeta } from "@/lib/types"
 
@@ -17,38 +18,22 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
   const pathname = usePathname()
   const router = useRouter()
   const toast = useToast()
-  const { user, workspace, pages, tree, favorites, createPage, movePage, openedPage } = useWorkspace()
+  const { user, workspace, pages, tree, favorites, createPage, movePage, openedPage, sidebarExpanded, saveSidebar } = useWorkspace()
   const currentId = openedPage?.id ?? pathname.match(/\/p\/([^/]+)/)?.[1] ?? null
-  const storageKey = `folio-expanded-${workspace.id}`
-  const [expanded, setExpanded] = useState<Record<string, boolean> | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>(sidebarExpanded)
+  const expandedRef = useRef(expanded)
+  expandedRef.current = expanded
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [drop, setDrop] = useState<{ id: string; placement: PagePlacement; blocked: boolean } | null>(null)
   const [moveError, setMoveError] = useState("")
   const pagesRef = useRef(pages)
   pagesRef.current = pages
 
-  useEffect(() => {
-    const raw = window.localStorage.getItem(storageKey)
-    if (raw) {
-      try {
-        setExpanded(JSON.parse(raw) as Record<string, boolean>)
-        return
-      } catch {
-        // Ignore a corrupted preference and fall through to the default.
-      }
-    }
-    const pageList = pagesRef.current
-    const initial: Record<string, boolean> = {}
-    for (const page of pageList) {
-      if (pageList.some((child) => child.parentId === page.id)) initial[page.id] = true
-    }
-    setExpanded(initial)
-  }, [storageKey])
-
-  useEffect(() => {
-    if (!expanded) return
-    window.localStorage.setItem(storageKey, JSON.stringify(expanded))
-  }, [expanded, storageKey])
+  function rememberExpanded(next: Record<string, boolean>) {
+    expandedRef.current = next
+    setExpanded(next)
+    saveSidebar(next)
+  }
 
   useEffect(() => {
     if (!currentId) return
@@ -56,19 +41,22 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
     const ancestors = ancestorIds(currentId, byId)
     if (!ancestors.length) return
     setExpanded((current) => {
-      const next = { ...(current ?? {}) }
+      const next = { ...current }
       let changed = false
       for (const id of ancestors) {
-        if (!next[id]) {
+        if (next[id] === undefined) {
           next[id] = true
           changed = true
         }
       }
-      return changed ? next : current
+      if (!changed) return current
+      expandedRef.current = next
+      saveSidebar(next)
+      return next
     })
-  }, [currentId, pages])
+  }, [currentId, pages, saveSidebar])
 
-  const isOpen = (id: string) => (expanded ? expanded[id] !== false : true)
+  const isOpen = (id: string) => expanded[id] !== false
 
   function startPageDrag(pageId: string, event: React.PointerEvent<HTMLButtonElement>) {
     event.preventDefault()
@@ -91,8 +79,8 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
       const plan = planPageMove(pagesRef.current, pageId, targetId, placement)
       setDrop({ id: targetId, placement, blocked: !plan.ok })
       setMoveError(plan.ok ? "" : plan.message)
-      if (placement === "inside" && plan.ok) {
-        setExpanded((current) => (current?.[targetId] ? current : { ...(current ?? {}), [targetId]: true }))
+      if (placement === "inside" && plan.ok && expandedRef.current[targetId] === false) {
+        rememberExpanded({ ...expandedRef.current, [targetId]: true })
       }
     }
 
@@ -114,7 +102,7 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
       }
       setMoveError("")
       if (placement === "inside") {
-        setExpanded((current) => ({ ...(current ?? {}), [targetId]: true }))
+        rememberExpanded({ ...expandedRef.current, [targetId]: true })
       }
       void movePage({ pageId, targetId, placement })
     }
@@ -186,7 +174,8 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
               draggingId={draggingId}
               drop={drop}
               onDragStart={startPageDrag}
-              onToggle={(id) => setExpanded((current) => ({ ...(current ?? {}), [id]: !isOpen(id) }))}
+              onToggle={(id) => rememberExpanded({ ...expandedRef.current, [id]: expandedRef.current[id] === false })}
+              canDrag={(page) => canMovePage(user.id, workspace.role, page)}
               onCreate={(parentId) => void createPage({ parentId })}
               onNavigate={onNavigate}
               workspaceId={workspace.id}
@@ -245,6 +234,7 @@ function PageTree({
   drop,
   onDragStart,
   onToggle,
+  canDrag,
   onCreate,
   onNavigate,
   workspaceId,
@@ -257,6 +247,7 @@ function PageTree({
   drop: { id: string; placement: PagePlacement; blocked: boolean } | null
   onDragStart: (pageId: string, event: React.PointerEvent<HTMLButtonElement>) => void
   onToggle: (id: string) => void
+  canDrag: (page: PageMeta) => boolean
   onCreate: (parentId: string) => void
   onNavigate?: () => void
   workspaceId: string
@@ -291,15 +282,19 @@ function PageTree({
                   )}
                 />
               ) : null}
-              <button
-                type="button"
-                data-testid="page-drag"
-                aria-label={`拖拽${displayTitle(node.title)}`}
-                onPointerDown={(event) => onDragStart(node.id, event)}
-                className="shrink-0 cursor-grab touch-none rounded p-0.5 text-faint hover:bg-black/[0.06] active:cursor-grabbing"
-              >
-                <GripVertical size={14} />
-              </button>
+              {canDrag(node) ? (
+                <button
+                  type="button"
+                  data-testid="page-drag"
+                  aria-label={`拖拽${displayTitle(node.title)}`}
+                  onPointerDown={(event) => onDragStart(node.id, event)}
+                  className="shrink-0 cursor-grab touch-none rounded p-0.5 text-faint hover:bg-black/[0.06] active:cursor-grabbing"
+                >
+                  <GripVertical size={14} />
+                </button>
+              ) : (
+                <span className="w-[22px]" />
+              )}
               {node.children.length > 0 ? (
                 <button
                   type="button"
@@ -340,6 +335,7 @@ function PageTree({
                 drop={drop}
                 onDragStart={onDragStart}
                 onToggle={onToggle}
+                canDrag={canDrag}
                 onCreate={onCreate}
                 onNavigate={onNavigate}
                 workspaceId={workspaceId}
