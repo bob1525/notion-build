@@ -73,6 +73,8 @@
 
 全量结果：单元测试 **116**（108 + 8），端到端 **59**（56 + 3）。原有断言没有删除或放宽。同级拖拽、引用嵌套、折叠收起、跨块粘贴这些原有端到端都还在通过的集合里。全量端到端通过之后，错误提示改成靠右悬浮，又单独跑过 `e2e/nested-blocks.spec.ts`，3 个都通过。
 
+GitHub Actions 上提交 `668d351` 的 pull request 运行 [45962344207](https://github.com/bob1525/notion-build/actions/runs/45962344207) 通过。lint、typecheck 和单元测试 job 用时 1 分 16 秒，Playwright 用时 9 分 4 秒，59 个端到端通过。同一提交的 push 运行 [45962337106](https://github.com/bob1525/notion-build/actions/runs/45962337106) 也通过：单元测试 job 59 秒，Playwright 9 分 46 秒。两条运行的 lint、typecheck、单元测试和端到端都是成功，没有上传失败轨迹。
+
 ## 发现的问题
 
 拖到嵌套块上时，外层行如果因为内容没变就被跳过重绘，里面的指示线不会出现。现在只要落点在某块的子树里，那条祖先链都会重绘。
