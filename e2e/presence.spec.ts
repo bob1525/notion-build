@@ -78,8 +78,8 @@ test("shows who else is on the page and refreshes before a second edit", async (
     await expect(mia.getByTestId("conflict-dialog")).toHaveCount(0)
     await expect(mia.getByTestId("save-status")).toHaveText("已保存")
   } finally {
-    await nashContext.close()
-    await miaContext.close()
+    await nashContext.close().catch(() => {})
+    await miaContext.close().catch(() => {})
   }
 })
 
@@ -110,7 +110,7 @@ test("keeps a read-only member as viewing and hides people on the share page", a
     const claimedEditing = mia.waitForResponse((response) => {
       return response.request().method() === "POST" && new URL(response.url()).pathname === `/api/pages/${id}/presence` && (response.request().postData()?.includes('"editing"') ?? false) && response.ok()
     })
-    await mia.getByTestId("page-title").click()
+    await mia.getByTestId("page-title").focus()
     await claimedEditing
     const miaOnNash = nash.locator('[data-testid="presence-peer"][data-user-name="Mia"]')
     await expect(miaOnNash).toBeVisible({ timeout: 15_000 })
@@ -122,8 +122,8 @@ test("keeps a read-only member as viewing and hides people on the share page", a
     await expect(guest.getByTestId("presence-peer")).toHaveCount(0)
     await expect(guest.getByTestId("presence-fresh")).toHaveCount(0)
   } finally {
-    await nashContext.close()
-    await miaContext.close()
-    await guestContext.close()
+    await nashContext.close().catch(() => {})
+    await miaContext.close().catch(() => {})
+    await guestContext.close().catch(() => {})
   }
 })

@@ -123,6 +123,8 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     const pageId = initial.id
     let stopped = false
     async function tick() {
+      const target = document.activeElement as HTMLElement | null
+      editorActive.current = Boolean(target?.closest?.("[data-testid='page-title'], [data-testid='block-input']"))
       const activity = dirty.current || flushing.current || editorActive.current ? "editing" : "viewing"
       try {
         const data = await api<{ revision: number; peers: PresencePeer[] }>(`/api/pages/${pageId}/presence`, {
