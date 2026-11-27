@@ -126,7 +126,7 @@ GitHub Actions 上提交 `fca104b` 的 pull request 运行 [45984857339](https:/
 
 这一阶段新增单元测试 2 个（过期行怎么选、内容没变时采用新版本），新增端到端 4 个（清扫过期行、分享页上谁能看见、刷新前询问、浏览器离开前提示）。原先的 144 个单元测试和 69 个端到端仍在通过的集合里。加上这一阶段之后，总数是 146 个单元测试和 73 个端到端。
 
-GitHub Actions 的运行链接在这次提交的分支头跑绿之后补上。
+GitHub Actions 上提交 `09e6d5e` 的 pull request 运行 [46027980130](https://github.com/bob1525/notion-build/actions/runs/46027980130) 通过。lint、typecheck 和单元测试 41 秒；SQLite 的 Playwright 15 分 24 秒；PostgreSQL 上的 Playwright 12 分 13 秒。同一提交的 push 运行 [46027968763](https://github.com/bob1525/notion-build/actions/runs/46027968763) 也通过：单元测试 46 秒，SQLite Playwright 11 分 27 秒，PostgreSQL Playwright 12 分 22 秒。三条 job 都是成功。Node.js 20 的弃用提示还在，不影响结果。
 
 ## 发现的问题
 
