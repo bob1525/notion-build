@@ -88,6 +88,10 @@ PostgreSQL 用同一条命令，把 `DATABASE_URL` 指到本机库，并设置 `
 
 原先的 137 个单元测试和 62 个端到端仍然全部通过。加上这一阶段之后，总数是 142 个单元测试和 64 个端到端。
 
+GitHub Actions 上提交 `fca104b` 的 pull request 运行 [45984857339](https://github.com/bob1525/notion-build/actions/runs/45984857339) 通过。lint、typecheck 和单元测试 33 秒；SQLite 的 Playwright 10 分 29 秒；PostgreSQL 上的 Playwright 10 分 27 秒。同一提交的 push 运行 [45984847999](https://github.com/bob1525/notion-build/actions/runs/45984847999) 也通过：单元测试 32 秒，SQLite Playwright 10 分 27 秒，PostgreSQL Playwright 10 分 56 秒。三条 job 都是成功。Node.js 20 的弃用提示还在，不影响结果。
+
+更早的 `6473872` 上，pull request 运行已经通过，push 的 SQLite 端到端有一条用例超时。原因和修复写在下面。通过证据以上面的 `fca104b` 为准。
+
 ## 发现的问题
 
 自己的保存和一次已经发出的轮询可能交错。轮询先看到新版本号，保存响应还没把这个号记成「我的」。如果这时直接提示「有新版本」，作者会看到自己刚保存的内容。现在用两个数：自己确认过的版本号，以及轮询见过的最大版本号。只有后者更大才提示。保存成功时抬高自己确认过的号，不会把别人真正更新的版本号清掉。
