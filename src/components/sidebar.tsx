@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, FilePlus, GripVertical, Lock, LogOut, Pin, P
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { useToast } from "@/components/ui"
 import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 import { useWorkspace } from "@/components/workspace-provider"
@@ -118,7 +119,7 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
   }
 
   return (
-    <aside data-testid="sidebar" className="flex h-full w-[min(272px,calc(100vw-3rem))] shrink-0 flex-col bg-sidebar text-ink md:w-[272px]">
+    <aside data-testid="sidebar" aria-label="工作区侧栏" className="flex h-full w-[min(272px,calc(100vw-3rem))] shrink-0 flex-col bg-sidebar text-ink md:w-[272px]">
       <div className="px-2 pt-2">
         <WorkspaceSwitcher onNavigate={onNavigate} />
         <button
@@ -129,6 +130,7 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
         >
           <Search size={15} />
           <span className="flex-1">搜索</span>
+          <span className="sr-only">，快捷键 Ctrl 或 Command 加 K</span>
           <kbd className="rounded border border-black/10 bg-white px-1.5 py-0.5 text-[10px] text-faint">⌘K</kbd>
         </button>
       </div>
@@ -157,7 +159,31 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
             </button>
           }
         >
-          <div className="relative">
+          <nav
+            aria-label="页面"
+            className="relative"
+            onKeyDown={(event) => {
+              const link = (event.target as HTMLElement).closest("[data-testid='page-link']")
+              if (!(link instanceof HTMLElement)) return
+              const links = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-testid='page-link']"))
+              const index = links.indexOf(link)
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault()
+                const next = event.key === "ArrowDown" ? links[index + 1] : links[index - 1]
+                next?.focus()
+              }
+              const pageId = link.closest("[data-testid='page-row']")?.getAttribute("data-page-id")
+              if (!pageId) return
+              if (event.key === "ArrowRight" && !isOpen(pageId)) {
+                event.preventDefault()
+                rememberExpanded({ ...expandedRef.current, [pageId]: true })
+              }
+              if (event.key === "ArrowLeft" && isOpen(pageId) && (link.closest("[data-testid='page-row']")?.querySelector("[data-testid='toggle-children']"))) {
+                event.preventDefault()
+                rememberExpanded({ ...expandedRef.current, [pageId]: false })
+              }
+            }}
+          >
           {moveError ? (
             <p data-testid="page-move-error" role="alert" className="pointer-events-none absolute left-2 right-2 top-0 z-20 rounded bg-white px-2 py-1 text-xs leading-5 text-danger shadow-card">
               {moveError}
@@ -181,7 +207,7 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
               workspaceId={workspace.id}
             />
           )}
-          </div>
+          </nav>
         </Section>
       </div>
       <div className="border-t border-black/[0.06] p-2">
@@ -196,6 +222,7 @@ export function Sidebar({ onSearch, onNavigate }: { onSearch: () => void; onNavi
           <FilePlus size={15} />
           新建页面
         </button>
+        <ThemeToggle className="mb-1 w-full justify-start" />
         <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink text-xs font-medium text-white">
             {user.name.slice(0, 1).toUpperCase()}
@@ -320,7 +347,7 @@ function PageTree({
                 data-testid="add-child"
                 aria-label={`在${displayTitle(node.title)}下新建子页面`}
                 onClick={() => onCreate(node.id)}
-                className="rounded p-1 text-muted opacity-100 hover:bg-black/[0.06] md:opacity-0 md:group-hover:opacity-100"
+                className="rounded p-1 text-muted opacity-100 hover:bg-black/[0.06] focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
               >
                 <Plus size={14} />
               </button>

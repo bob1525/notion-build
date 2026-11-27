@@ -36,14 +36,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           setSearchOpen(true)
         })
       }
-      if (event.key === "Escape") setNavOpen(false)
+      if (event.key === "Escape" && !document.querySelector("[role='dialog']")) setNavOpen(false)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-white text-ink">
+    <div className="flex h-dvh overflow-hidden bg-surface text-ink">
+      <a href="#folio-content" className="skip-link">跳到正文</a>
       {navOpen ? (
         <button className="fixed inset-0 z-30 bg-black/30 md:hidden" aria-label="关闭侧栏" onClick={() => setNavOpen(false)} />
       ) : null}
@@ -60,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Search size={18} />
           </button>
         </header>
-        <main className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto">
+        <main id="folio-content" className="scrollbar-thin relative min-h-0 flex-1 overflow-y-auto">
           {openedPage ? <PageScreen key={openedPage.id} initial={openedPage} /> : children}
           {creatingPage ? (
             <div className="absolute inset-0 z-20 bg-white">

@@ -3,7 +3,8 @@
 import { Search } from "lucide-react"
 import type { ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useFocusTrap } from "@/components/ui"
 import { useWorkspace } from "@/components/workspace-provider"
 import { ApiError, api } from "@/lib/api-client"
 import { displayTitle } from "@/lib/format"
@@ -19,6 +20,8 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [active, setActive] = useState(0)
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(true, panelRef, onClose)
 
   const recent = useMemo(
     () =>
@@ -78,12 +81,13 @@ export function SearchDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center px-3 pb-3 sm:items-start sm:px-4 sm:pb-0 sm:pt-[12vh]">
       <button className="absolute inset-0 bg-black/30" aria-label="关闭搜索" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label="搜索页面" className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-pop">
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="搜索页面" tabIndex={-1} className="relative z-10 w-full max-w-xl overflow-hidden rounded-xl bg-surface shadow-pop outline-none">
         <div className="flex items-center gap-2 border-b border-black/[0.06] px-3">
           <Search size={16} className="text-faint" />
           <input
             data-testid="search-input"
             autoFocus
+            aria-label="搜索标题和正文"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {

@@ -1,8 +1,52 @@
 "use client"
 
 import { X } from "lucide-react"
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/cn"
+
+const FOCUSABLE = "a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])"
+
+export function focusableIn(root: ParentNode | null) {
+  if (!root) return []
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => !element.hasAttribute("disabled") && element.tabIndex !== -1)
+}
+
+export function useFocusTrap(open: boolean, panelRef: React.RefObject<HTMLElement | null>, onClose: () => void) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const panel = panelRef.current
+    const first = focusableIn(panel)[0]
+    ;(first ?? panel)?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== "Tab" || !panel) return
+      const items = focusableIn(panel)
+      if (!items.length) return
+      const start = items[0]
+      const end = items[items.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey && (active === start || !panel.contains(active))) {
+        event.preventDefault()
+        end.focus()
+      } else if (!event.shiftKey && (active === end || !panel.contains(active))) {
+        event.preventDefault()
+        start.focus()
+      }
+    }
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      if (previous && document.contains(previous)) previous.focus()
+    }
+  }, [open, panelRef])
+}
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "ghost" | "soft" | "danger"
@@ -68,20 +112,14 @@ export function Dialog({
   testId?: string
   wide?: boolean
 }) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose()
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [open, onClose])
+  const panelRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(open, panelRef, onClose)
 
   if (!open) return null
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center p-4 sm:items-center">
       <button className="absolute inset-0 bg-black/30" aria-label="关闭" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={title} data-testid={testId} className={cn("relative z-10 w-full rounded-xl bg-white p-4 shadow-pop", wide ? "max-w-3xl" : "max-w-md")}>
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} data-testid={testId} className={cn("relative z-10 w-full rounded-xl bg-surface p-4 shadow-pop outline-none", wide ? "max-w-3xl" : "max-w-md")}>
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold">{title}</h2>
           <button type="button" onClick={onClose} aria-label="关闭对话框" className="rounded-md p-1 text-muted hover:bg-black/[0.05]">

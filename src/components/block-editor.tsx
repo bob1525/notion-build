@@ -598,7 +598,8 @@ export function BlockEditor({
               <div
                 id={`block-focus-${block.id}`}
                 tabIndex={0}
-                role="separator"
+                role="group"
+                aria-label="分割线"
                 data-testid="divider"
                 className="rounded px-1 py-2 outline-none focus-visible:bg-black/[0.03]"
                 onKeyDown={(event) => {

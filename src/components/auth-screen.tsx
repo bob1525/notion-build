@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Button, Logo } from "@/components/ui"
 import { ApiError, api } from "@/lib/api-client"
 import { DEMO_USERS } from "@/lib/demo-accounts"
@@ -40,7 +41,8 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[1.05fr_0.95fr]">
+    <div className="relative grid min-h-dvh lg:grid-cols-[1.05fr_0.95fr]">
+      <ThemeToggle className="absolute right-4 top-4 z-10 bg-surface" />
       <section className="hidden flex-col justify-between bg-sidebar px-12 py-10 lg:flex">
         <Logo />
         <div>

@@ -88,6 +88,7 @@ export function PageHistoryDialog({
                 data-snapshot-id={item.id}
                 data-editor={item.editorName}
                 aria-pressed={selectedId === item.id}
+                aria-label={`${formatDateTime(item.updatedAt)} ${item.editorName}`}
                 onClick={() => void openPreview(item.id)}
                 className={cn(
                   "w-full rounded-md px-2 py-1.5 text-left",

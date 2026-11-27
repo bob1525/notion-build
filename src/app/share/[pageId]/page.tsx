@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { BlockView } from "@/components/block-view"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Button, EmptyState, Logo } from "@/components/ui"
 import { cn } from "@/lib/cn"
 import { formatDateTime } from "@/lib/format"
@@ -35,6 +36,7 @@ export default async function SharePage({ params }: { params: Promise<{ pageId: 
       <header className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3 sm:px-8">
         <Logo />
         <div className="flex items-center gap-3 text-sm">
+          <ThemeToggle />
           <span className="hidden text-muted sm:inline">{page.workspace.icon} {page.workspace.name} · 只读</span>
           <Link href={`/w/${page.workspace.id}/p/${page.id}`} className="rounded-md bg-ink px-3 py-1.5 text-white">在 Folio 中打开</Link>
         </div>

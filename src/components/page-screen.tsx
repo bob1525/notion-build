@@ -500,13 +500,14 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           {meta.authorName} · 编辑于 {formatDateTime(meta.updatedAt)}
         </p>
         {peers.length > 0 ? (
-          <div data-testid="presence-peers" className="mb-3 flex flex-wrap items-center gap-2">
+          <div data-testid="presence-peers" role="status" aria-live="polite" aria-label="正在这页的其他人" className="mb-3 flex flex-wrap items-center gap-2">
             {peers.map((peer) => (
               <span
                 key={peer.userId}
                 data-testid="presence-peer"
                 data-user-name={peer.name}
                 data-activity={peer.activity}
+                aria-label={`${peer.name}${peer.activity === "editing" ? "正在编辑" : "正在查看"}`}
                 className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.04] py-1 pl-1 pr-2 text-xs text-muted"
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[10px] font-medium text-white" aria-hidden>
@@ -519,7 +520,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
           </div>
         ) : null}
         {fresh && !conflictOpen ? (
-          <div data-testid="presence-fresh" data-dirty={dirty.current ? "true" : "false"} className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm">
+          <div data-testid="presence-fresh" data-dirty={dirty.current ? "true" : "false"} role="status" aria-live="polite" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm">
             <span>
               有新版本。刷新后再改，可以少碰到保存冲突。
               {dirty.current ? "刷新会丢掉还没保存的修改。" : ""}
@@ -568,7 +569,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
             data-testid="favorite-button"
             aria-pressed={meta.favorited}
             onClick={() => void toggleFavorite()}
-            className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]", meta.favorited && "text-amber-600")}
+            className={cn("inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]", meta.favorited && "text-[#8a3d08]")}
           >
             <Star size={13} fill={meta.favorited ? "currentColor" : "none"} />
             {meta.favorited ? "已收藏" : "收藏"}

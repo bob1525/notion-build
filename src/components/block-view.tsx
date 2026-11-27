@@ -51,7 +51,7 @@ function BlockTree({ blocks, items }: { blocks: BlockDTO[]; items: BlockDTO[] })
           const marker = listMarker(block.type, index, items)
           body = (
             <div className={cn("flex gap-2", blockTextClass(block.type, "w-auto"))}>
-              {block.type === "todo" ? <input type="checkbox" checked={block.checked} readOnly className="mt-1.5 h-4 w-4 accent-ink" /> : null}
+              {block.type === "todo" ? <input type="checkbox" checked={block.checked} readOnly aria-label={block.checked ? "已完成" : "未完成"} className="mt-1.5 h-4 w-4 accent-ink" /> : null}
               {block.type === "toggle" ? <span className={cn("mt-1.5 text-muted", !block.collapsed && "rotate-90")}>▸</span> : null}
               {marker ? <span className="w-6 shrink-0 text-right text-muted">{marker}</span> : null}
               <div className={cn("min-w-0 flex-1 whitespace-pre-wrap break-words", block.checked && "text-muted line-through")}>

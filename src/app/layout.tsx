@@ -14,8 +14,20 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className={`${sans.variable} ${mono.variable} font-sans antialiased`}>
+        <Script id="folio-theme" strategy="beforeInteractive">{`
+          (function () {
+            try {
+              var stored = localStorage.getItem("folio-theme");
+              var preference = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+              var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+              var theme = preference === "system" ? (systemDark ? "dark" : "light") : preference;
+              document.documentElement.setAttribute("data-theme", theme);
+              document.documentElement.style.colorScheme = theme;
+            } catch (e) {}
+          })();
+        `}</Script>
         <Script id="folio-link-key" strategy="beforeInteractive">{`
           document.addEventListener("keydown", function (event) {
             if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return

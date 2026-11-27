@@ -5,13 +5,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#37352f",
-        muted: "#787774",
-        faint: "#9b9a97",
-        sidebar: "#f7f6f3",
-        accent: "#2383e2",
-        cream: "#fbfbfa",
-        danger: "#c4554d",
+        ink: "rgb(var(--folio-ink) / <alpha-value>)",
+        muted: "rgb(var(--folio-muted) / <alpha-value>)",
+        faint: "rgb(var(--folio-faint) / <alpha-value>)",
+        sidebar: "rgb(var(--folio-sidebar) / <alpha-value>)",
+        accent: "rgb(var(--folio-accent) / <alpha-value>)",
+        cream: "rgb(var(--folio-cream) / <alpha-value>)",
+        danger: "rgb(var(--folio-danger) / <alpha-value>)",
+        surface: "rgb(var(--folio-surface) / <alpha-value>)",
       },
       boxShadow: {
         pop: "rgb(15 15 15 / 5%) 0 0 0 1px, rgb(15 15 15 / 10%) 0 3px 6px, rgb(15 15 15 / 16%) 0 9px 24px",
