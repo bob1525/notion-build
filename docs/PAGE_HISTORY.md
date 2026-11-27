@@ -132,7 +132,7 @@ GitHub Actions 上提交 `5b4793c` 的 pull request 运行 [45975487581](https:/
 
 这一阶段新增单元测试 2 个（指定时区的偏移、省略时区时用运行环境），新增端到端 2 个（上海时区的历史时间、分享页上谁能看和谁能恢复）。原先的 146 个单元测试和 73 个端到端仍在通过的集合里。加上这一阶段之后，总数是 148 个单元测试和 75 个端到端。
 
-GitHub Actions 的运行链接在这次提交的分支头跑绿之后补上。
+GitHub Actions 上提交 `f832e04` 的 pull request 运行 [46037877191](https://github.com/bob1525/notion-build/actions/runs/46037877191) 通过。lint、typecheck 和单元测试 42 秒；SQLite 的 Playwright 16 分 2 秒；PostgreSQL 上的 Playwright 15 分 10 秒。同一提交的 push 运行 [46037868897](https://github.com/bob1525/notion-build/actions/runs/46037868897) 也通过：单元测试 34 秒，SQLite Playwright 13 分 27 秒，PostgreSQL Playwright 12 分 48 秒。三条 job 都是成功。Node.js 20 的弃用提示还在，不影响结果。
 
 ## 发现的问题
 
