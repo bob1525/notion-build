@@ -16,7 +16,7 @@ import { COVERS, EMOJIS } from "@/lib/constants"
 import { cn } from "@/lib/cn"
 import { displayTitle, formatDateTime } from "@/lib/format"
 import { canDeletePage, canEditPage, canManageVisibility } from "@/lib/permissions"
-import { PRESENCE_POLL_MS, hasNewerRevision, type PresencePeer } from "@/lib/presence"
+import { PRESENCE_POLL_MS, hasNewerRevision, shouldAdoptRemote, type PresencePeer } from "@/lib/presence"
 import { comparePages } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta } from "@/lib/types"
 
@@ -47,6 +47,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const [restoring, setRestoring] = useState(false)
   const [peers, setPeers] = useState<PresencePeer[]>([])
   const [fresh, setFresh] = useState(false)
+  const [refreshGuard, setRefreshGuard] = useState(false)
   const favoriteLock = useRef(false)
   const conflictLock = useRef(false)
   const pendingRestore = useRef<string | null>(null)
@@ -61,6 +62,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const editorActive = useRef(false)
   const ackedRevision = useRef(initial.revision)
   const remoteRevision = useRef(initial.revision)
+  const loadedFingerprint = useRef(JSON.stringify(pagePayload(initial, blocks)))
 
   const syncFresh = useCallback(() => {
     setFresh(hasNewerRevision(ackedRevision.current, remoteRevision.current) && !conflictLock.current)
@@ -100,6 +102,16 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         keepalive: true,
       })
     }
+  }, [])
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty.current) return
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
   }, [])
 
   useEffect(() => {
@@ -190,6 +202,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     const nextMeta = { ...page, favorited, blocks: nextBlocks }
     metaRef.current = nextMeta
     blocksRef.current = nextBlocks
+    loadedFingerprint.current = JSON.stringify(pagePayload(nextMeta, nextBlocks))
     setMeta(nextMeta)
     setBlocks(nextBlocks)
     setMarkdown(markdownDraftFrom(nextBlocks))
@@ -200,6 +213,16 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     const snapshotMeta = metaRef.current
     const snapshotBlocks = blocksRef.current
     const fingerprint = JSON.stringify(pagePayload(snapshotMeta, snapshotBlocks))
+    if (!overwrite && shouldAdoptRemote(fingerprint === loadedFingerprint.current, ackedRevision.current, remoteRevision.current)) {
+      try {
+        await applyLatest()
+        return "saved" as const
+      } catch (error) {
+        setStatus("error")
+        toast(error instanceof ApiError ? error.message : "没有换成新版本")
+        return "error" as const
+      }
+    }
     try {
       const saved = await api<PageDetail>(`/api/pages/${snapshotMeta.id}`, {
         method: "PATCH",
@@ -222,6 +245,16 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
       return "again" as const
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
+        if (!overwrite && fingerprint === loadedFingerprint.current) {
+          try {
+            await applyLatest()
+            return "saved" as const
+          } catch (applyError) {
+            setStatus("error")
+            toast(applyError instanceof ApiError ? applyError.message : "没有换成新版本")
+            return "error" as const
+          }
+        }
         pendingRestore.current = null
         conflictLock.current = true
         if (timer.current) clearTimeout(timer.current)
@@ -258,22 +291,39 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     }
   }
 
+  async function applyLatest() {
+    if (timer.current) clearTimeout(timer.current)
+    const latest = await api<PageDetail>(`/api/pages/${metaRef.current.id}`)
+    dirty.current = false
+    conflictLock.current = false
+    adoptRevision(latest.revision)
+    applyPage(latest)
+    setRefreshGuard(false)
+    setStatus("saved")
+  }
+
   async function refreshRemote() {
     if (flushing.current) {
       toast("正在保存，请稍后再刷新")
       return
     }
-    if (timer.current) clearTimeout(timer.current)
     try {
-      const latest = await api<PageDetail>(`/api/pages/${metaRef.current.id}`)
-      dirty.current = false
-      conflictLock.current = false
-      adoptRevision(latest.revision)
-      applyPage(latest)
-      setStatus("saved")
+      await applyLatest()
     } catch (error) {
       toast(error instanceof ApiError ? error.message : "没有刷新页面")
     }
+  }
+
+  function requestRefresh() {
+    if (flushing.current) {
+      toast("正在保存，请稍后再刷新")
+      return
+    }
+    if (dirty.current) {
+      setRefreshGuard(true)
+      return
+    }
+    void refreshRemote()
   }
 
   async function discardConflict() {
@@ -525,7 +575,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
               有新版本。刷新后再改，可以少碰到保存冲突。
               {dirty.current ? "刷新会丢掉还没保存的修改。" : ""}
             </span>
-            <button type="button" data-testid="presence-refresh" className="rounded-md bg-white px-2 py-1 text-xs shadow-card" onClick={() => void refreshRemote()}>
+            <button type="button" data-testid="presence-refresh" className="rounded-md bg-white px-2 py-1 text-xs shadow-card" onClick={requestRefresh}>
               刷新
             </button>
           </div>
@@ -712,11 +762,18 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         onClose={() => setHistoryOpen(false)}
         onRestore={(snapshotId) => void restoreSnapshot(snapshotId)}
       />
+      <Dialog open={refreshGuard} title="刷新会丢掉还没保存的修改" onClose={() => setRefreshGuard(false)} testId="presence-refresh-confirm">
+        <p className="text-sm leading-6 text-muted">这一页在别处有新版本。刷新会丢掉你还没保存的修改，改成已经保存的内容。</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="soft" data-testid="presence-refresh-cancel" onClick={() => setRefreshGuard(false)}>留下我的修改</Button>
+          <Button data-testid="presence-refresh-discard" onClick={() => void refreshRemote()}>仍要刷新</Button>
+        </div>
+      </Dialog>
       <Dialog open={conflictOpen} title={conflictKind === "restore" ? "恢复时发现页面已被修改" : "这篇页面在别处被修改了"} onClose={() => setConflictOpen(true)} testId="conflict-dialog">
         <p className="text-sm leading-6 text-muted">
           {conflictKind === "restore"
             ? "这份历史还没写回去。覆盖会用所选版本替换当前页面，并记成一条新历史。放弃并刷新会保持别人刚保存的内容。"
-            : "你这次的修改还没写进去。覆盖会用你现在的内容替换已经保存的版本。放弃并刷新会丢掉你还没保存的修改，改回最新内容。"}
+            : "你这次的修改还没写进去。覆盖会用你现在的内容替换已经保存的版本。放弃并刷新会丢掉你还没保存的修改，改回最新内容。本地没有要留下的修改时，上方的刷新会直接换成新版本。"}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="soft" data-testid="conflict-discard" onClick={() => void discardConflict()}>放弃并刷新</Button>

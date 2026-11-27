@@ -3,6 +3,7 @@ import type { Role, Visibility } from "@/lib/types"
 
 export const PRESENCE_TTL_MS = 20_000
 export const PRESENCE_POLL_MS = 5_000
+export const PRESENCE_SWEEP_MS = 5_000
 
 export type PresenceActivity = "viewing" | "editing"
 
@@ -44,4 +45,16 @@ export function visiblePeers<T extends { userId: string; seenAt: Date }>(rows: T
 
 export function hasNewerRevision(localRevision: number, remoteRevision: number) {
   return remoteRevision > localRevision
+}
+
+export function isPresenceExpired(seenAt: Date, now: Date, ttl = PRESENCE_TTL_MS) {
+  return seenAt.getTime() < now.getTime() - ttl
+}
+
+export function expiredPresenceIds<T extends { id: string; seenAt: Date }>(rows: T[], now: Date, ttl = PRESENCE_TTL_MS) {
+  return rows.filter((row) => isPresenceExpired(row.seenAt, now, ttl)).map((row) => row.id)
+}
+
+export function shouldAdoptRemote(unchanged: boolean, localRevision: number, remoteRevision: number) {
+  return unchanged && hasNewerRevision(localRevision, remoteRevision)
 }

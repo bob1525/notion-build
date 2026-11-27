@@ -1,6 +1,7 @@
 import "server-only"
 import { prisma } from "@/lib/db"
 import { canAnnouncePresence, activityFor, staleBefore, visiblePeers, type PresenceActivity } from "@/lib/presence"
+import { sweepExpiredPresence } from "@/server/presence-sweep"
 import { loadPageDetail } from "@/server/content"
 import { HttpError } from "@/server/http"
 
@@ -21,7 +22,7 @@ export async function touchPresence(userId: string, pageId: string, requested: P
       update: { activity, seenAt: now },
     })
   }
-  await prisma.pagePresence.deleteMany({ where: { seenAt: { lt: staleBefore(now) } } })
+  await sweepExpiredPresence(now)
   const rows = await prisma.pagePresence.findMany({
     where: { pageId, seenAt: { gte: staleBefore(now) } },
     include: { user: { select: { name: true } } },

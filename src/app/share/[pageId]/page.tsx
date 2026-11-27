@@ -5,7 +5,9 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Button, EmptyState, Logo } from "@/components/ui"
 import { cn } from "@/lib/cn"
 import { formatDateTime } from "@/lib/format"
-import { loadPublicPage } from "@/server/content"
+import { SharePresence } from "@/components/share-presence"
+import { getCurrentUser } from "@/server/auth"
+import { loadPageDetail, loadPublicPage } from "@/server/content"
 
 export const dynamic = "force-dynamic"
 
@@ -16,6 +18,9 @@ export async function generateMetadata({ params }: { params: Promise<{ pageId: s
 
 export default async function SharePage({ params }: { params: Promise<{ pageId: string }> }) {
   const page = await loadPublicPage((await params).pageId)
+  const viewer = await getCurrentUser()
+  const access = viewer && page ? await loadPageDetail(viewer.id, page.id) : null
+  const showPresence = access?.kind === "ok"
   if (!page) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center px-6">
@@ -48,6 +53,7 @@ export default async function SharePage({ params }: { params: Promise<{ pageId: 
         <p className="mb-8 mt-2 text-xs text-faint">
           {page.authorName} · 编辑于 {formatDateTime(page.updatedAt)} · {page.visibility === "read" ? "公开只读" : "成员可编辑，此链接只读"}
         </p>
+        {showPresence ? <SharePresence pageId={page.id} revision={page.revision} /> : null}
         <BlockView blocks={page.blocks} />
       </article>
     </main>

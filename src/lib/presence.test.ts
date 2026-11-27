@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest"
 import {
   PRESENCE_POLL_MS,
+  PRESENCE_SWEEP_MS,
   PRESENCE_TTL_MS,
   activityFor,
   canAnnouncePresence,
+  expiredPresenceIds,
   hasNewerRevision,
+  isPresenceExpired,
   normalizeActivity,
+  shouldAdoptRemote,
   visiblePeers,
 } from "./presence"
 
@@ -45,6 +49,25 @@ describe("presence", () => {
     expect(activityFor("nash", readPage, "member", "editing")).toBe("editing")
     const publicPage = { authorId: "nash", visibility: "public" as const }
     expect(activityFor("mia", publicPage, "member", "editing")).toBe("editing")
+  })
+
+  it("selects heartbeats older than the window for the sweeper", () => {
+    expect(PRESENCE_SWEEP_MS).toBe(5_000)
+    const rows = [
+      { id: "fresh", seenAt: now },
+      { id: "edge", seenAt: new Date(now.getTime() - PRESENCE_TTL_MS) },
+      { id: "stale", seenAt: new Date(now.getTime() - PRESENCE_TTL_MS - 1) },
+    ]
+    expect(expiredPresenceIds(rows, now)).toEqual(["stale"])
+    expect(isPresenceExpired(rows[1].seenAt, now)).toBe(false)
+    expect(isPresenceExpired(rows[2].seenAt, now)).toBe(true)
+  })
+
+  it("adopts a newer revision only when the local draft is unchanged", () => {
+    expect(shouldAdoptRemote(true, 3, 4)).toBe(true)
+    expect(shouldAdoptRemote(true, 4, 4)).toBe(false)
+    expect(shouldAdoptRemote(true, 5, 4)).toBe(false)
+    expect(shouldAdoptRemote(false, 3, 4)).toBe(false)
   })
 
   it("follows the same view rules as the page itself", () => {

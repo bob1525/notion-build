@@ -729,6 +729,7 @@ export async function loadPublicPage(pageId: string) {
     icon: page.icon,
     cover: asCover(page.cover),
     updatedAt: page.updatedAt.toISOString(),
+    revision: page.revision,
     authorName: page.author.name,
     workspace: page.workspace,
     blocks: page.blocks.map(toBlock),
