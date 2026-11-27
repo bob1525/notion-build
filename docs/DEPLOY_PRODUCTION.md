@@ -229,7 +229,9 @@ Production 里没有 `AUTH_SECRET`，或短于 16 位。填一串新的随机字
 | 同一套端到端，`DATABASE_URL` 指向本机 PostgreSQL 16 | 59 通过，约 7.0 分钟。日志是 `数据库：postgresql`，播种仍是 2 个用户、3 个工作区、16 个页面、99 个块 |
 | `npm run build` | 生产构建成功，退出码 0 |
 
-原有断言没有删除或放宽。GitHub Actions 的链接在分支头通过之后补上。
+原有断言没有删除或放宽。
+
+GitHub Actions 上提交 `d630c6e` 的 pull request 运行 [45968147499](https://github.com/bob1525/notion-build/actions/runs/45968147499) 通过。lint、typecheck 和单元测试 43 秒；SQLite 的 Playwright 8 分 41 秒；PostgreSQL 上的 Playwright 9 分 8 秒。同一提交的 push 运行 [45968136360](https://github.com/bob1525/notion-build/actions/runs/45968136360) 也通过：单元测试 40 秒，SQLite Playwright 8 分 46 秒，PostgreSQL Playwright 8 分 51 秒。三条 job 都是成功，没有上传失败轨迹。
 
 ## 还没做
 
