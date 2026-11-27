@@ -7,6 +7,7 @@ import { normalizeMarks } from "@/lib/rich-text"
 import type { InlineMark } from "@/lib/types"
 import { prisma } from "@/lib/db"
 import { asBlockType, asCover, asRole, asVisibility, clampIcon, cleanTitle, displayTitle, pickWorkspaceId } from "@/lib/format"
+import { canReadPageHistory, canRestorePageHistory, parseSnapshotBlocks } from "@/lib/page-history"
 import { canDeletePage, canEditPage, canFindInSearch, canManageVisibility, canMovePage, canSharePage, canViewPage, pageSaveError } from "@/lib/permissions"
 import { readSidebar, writeSidebar } from "@/lib/ui-state"
 import { searchPages, type SearchScope } from "@/lib/search"
@@ -14,6 +15,7 @@ import { breadcrumbTitles, planPageCopy, planPageMove } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta, SearchHit, UserDTO, WorkspaceDTO } from "@/lib/types"
 import { readRememberedWorkspace } from "@/server/auth"
 import { ConflictError, HttpError } from "@/server/http"
+import { recordPageSnapshot } from "@/server/snapshots"
 import type { Page } from "@prisma/client"
 
 export const registerSchema = z.object({
@@ -56,6 +58,11 @@ export const updatePageSchema = z.object({
   visibility: z.enum(["private", "public", "read"]),
   pinned: z.boolean(),
   blocks: z.array(blockInputSchema).max(400),
+  baseRevision: z.number().int().nonnegative(),
+  overwrite: z.boolean().optional().default(false),
+})
+
+export const restorePageSchema = z.object({
   baseRevision: z.number().int().nonnegative(),
   overwrite: z.boolean().optional().default(false),
 })
@@ -363,11 +370,20 @@ export async function createPage(userId: string, workspaceId: string, input: z.i
   return toPageMeta(page, false)
 }
 
-export async function updatePage(userId: string, pageId: string, input: z.infer<typeof updatePageSchema>) {
+export async function updatePage(
+  userId: string,
+  pageId: string,
+  input: z.infer<typeof updatePageSchema>,
+  options?: { forceSnapshot?: boolean },
+) {
   const loaded = await loadPageDetail(userId, pageId)
   if (loaded.kind === "missing") throw new HttpError(404, "找不到这个页面")
   if (loaded.kind === "forbidden") throw new HttpError(403, "你没有编辑这个页面的权限")
   const blocks = normalizeBlocks(input.blocks)
+  const title = cleanTitle(input.title)
+  const icon = clampIcon(input.icon, "📄")
+  const cover = asCover(input.cover)
+  const contentChanged = pageContentChanged(loaded.page, input, blocks)
   const denied = pageSaveError(
     userId,
     loaded.role,
@@ -375,7 +391,7 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
     {
       visibility: input.visibility,
       pinned: input.pinned,
-      contentChanged: pageContentChanged(loaded.page, input, blocks),
+      contentChanged,
     },
   )
   if (denied) throw new HttpError(403, denied)
@@ -384,9 +400,9 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
     const gate = await tx.page.updateMany({
       where: input.overwrite ? { id: pageId } : { id: pageId, revision: input.baseRevision },
       data: {
-        title: cleanTitle(input.title),
-        icon: clampIcon(input.icon, "📄"),
-        cover: asCover(input.cover),
+        title,
+        icon,
+        cover,
         visibility: input.visibility,
         pinned: input.pinned,
         revision: { increment: 1 },
@@ -415,6 +431,18 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
         })),
       })
     }
+    if (contentChanged || options?.forceSnapshot) {
+      await recordPageSnapshot(tx, {
+        pageId,
+        editorId: userId,
+        title,
+        icon,
+        cover,
+        blocks,
+        now: new Date(),
+        forceNew: Boolean(options?.forceSnapshot),
+      })
+    }
   })
   if (conflicted) {
     const latest = await loadPageDetail(userId, pageId)
@@ -425,6 +453,98 @@ export async function updatePage(userId: string, pageId: string, input: z.infer<
   const refreshed = await loadPageDetail(userId, pageId)
   if (refreshed.kind !== "ok") throw new HttpError(500, "保存后没有读到页面")
   return refreshed.page
+}
+
+function blocksFromSnapshot(raw: string) {
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) throw new Error("bad snapshot")
+    return parseSnapshotBlocks(raw)
+  } catch {
+    throw new HttpError(500, "这条历史读不出来")
+  }
+}
+
+async function historyAccess(userId: string, pageId: string) {
+  const loaded = await loadPageDetail(userId, pageId)
+  if (loaded.kind === "missing") throw new HttpError(404, "找不到这个页面")
+  if (loaded.kind !== "ok" || !canReadPageHistory(userId, loaded.page)) {
+    throw new HttpError(403, "你没有查看这个页面历史的权限")
+  }
+  return loaded
+}
+
+export async function listPageHistory(userId: string, pageId: string) {
+  await historyAccess(userId, pageId)
+  const rows = await prisma.pageSnapshot.findMany({
+    where: { pageId },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      editorId: true,
+      createdAt: true,
+      updatedAt: true,
+      editor: { select: { name: true } },
+    },
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    editorId: row.editorId,
+    editorName: row.editor.name,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }))
+}
+
+export async function readPageHistory(userId: string, pageId: string, snapshotId: string) {
+  await historyAccess(userId, pageId)
+  const row = await prisma.pageSnapshot.findFirst({
+    where: { id: snapshotId, pageId },
+    include: { editor: { select: { name: true } } },
+  })
+  if (!row) throw new HttpError(404, "找不到这个历史版本")
+  const blocks = blocksFromSnapshot(row.blocks)
+  return {
+    id: row.id,
+    editorId: row.editorId,
+    editorName: row.editor.name,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    title: row.title,
+    icon: row.icon,
+    cover: asCover(row.cover),
+    blocks,
+  }
+}
+
+export async function restorePageHistory(
+  userId: string,
+  pageId: string,
+  snapshotId: string,
+  input: z.infer<typeof restorePageSchema>,
+) {
+  const loaded = await historyAccess(userId, pageId)
+  if (!canRestorePageHistory(userId, loaded.page, loaded.role)) {
+    throw new HttpError(403, "你只能查看历史，不能恢复这篇页面")
+  }
+  const row = await prisma.pageSnapshot.findFirst({ where: { id: snapshotId, pageId } })
+  if (!row) throw new HttpError(404, "找不到这个历史版本")
+  const blocks = blocksFromSnapshot(row.blocks)
+  return updatePage(
+    userId,
+    pageId,
+    {
+      title: row.title,
+      icon: row.icon,
+      cover: row.cover,
+      visibility: loaded.page.visibility,
+      pinned: loaded.page.pinned,
+      blocks,
+      baseRevision: input.baseRevision,
+      overwrite: input.overwrite,
+    },
+    { forceSnapshot: true },
+  )
 }
 
 export async function moveWorkspacePage(userId: string, workspaceId: string, input: z.infer<typeof movePageSchema>) {

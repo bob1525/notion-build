@@ -22,7 +22,9 @@ Prisma 在生成客户端时就选定数据库种类。生成出来的那一份�
 
 `scripts/apply-visibility-migration.ts` 只跑两条普通的 `UPDATE`，把旧的可见性别名收成 `public` 和 `read`。SQLite 和 PostgreSQL 都能执行。`db:deploy` 会带上它。
 
-播种时，SQLite 仍用原来的 `PRAGMA foreign_keys` 和同样的 `DELETE` 顺序。PostgreSQL 不能关外键，所以按子表到父表删除，并多删 `UserPreference`。两种路径的语句由测试锁住。
+页面历史是后加的表。`schema.prisma` 里的 `PageSnapshot` 由 `db push` 建出来。`scripts/apply-page-history-migration.ts` 再用对应方言执行 `CREATE TABLE IF NOT EXISTS`，已经有这张表时什么都不做。`db:deploy` 也会带上它。`prisma/migrations` 里那份 SQL 仍是 SQLite 的，不要拿到 PostgreSQL 上执行。
+
+播种时，SQLite 仍先关掉外键再删除，PostgreSQL 按子表到父表删除。两种数据库都会在删除页面和用户之前删掉 `PageSnapshot`，原来的那些表也继续删除。语句由测试锁住。
 
 ## 你需要准备的东西
 

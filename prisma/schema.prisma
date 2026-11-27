@@ -18,6 +18,7 @@ model User {
   memberships  WorkspaceMember[]
   pages        Page[]            @relation("PageAuthor")
   favorites    Favorite[]
+  snapshots    PageSnapshot[]
   preference   UserPreference?
 }
 
@@ -65,6 +66,7 @@ model Page {
   author      User       @relation("PageAuthor", fields: [authorId], references: [id])
   blocks      Block[]
   favorites   Favorite[]
+  snapshots   PageSnapshot[]
 
   @@index([workspaceId, parentId, position])
   @@index([authorId])
@@ -105,4 +107,20 @@ model Favorite {
 
   @@unique([userId, pageId])
   @@index([pageId])
+}
+
+model PageSnapshot {
+  id        String   @id @default(cuid())
+  pageId    String
+  editorId  String
+  title     String   @default("")
+  icon      String   @default("📄")
+  cover     String   @default("")
+  blocks    String   @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  editor    User     @relation(fields: [editorId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, updatedAt])
 }

@@ -115,13 +115,13 @@ npm test
 npm run test:e2e
 ```
 
-`npm test` 跑单元测试，覆盖块编辑、行内格式和链接、Markdown 往返、搜索排序和标题/正文筛选、页面树拖拽和复制、权限矩阵和公开只读/可编辑、快捷键、引用、折叠、图片校验和存储后端、代码着色、剪贴板里的跨块内容、大页面里未改动块保持原对象，以及按环境变量选择 SQLite 或 PostgreSQL。当前 127 个通过。
+`npm test` 跑单元测试，覆盖块编辑、行内格式和链接、Markdown 往返、搜索排序和标题/正文筛选、页面树拖拽和复制、权限矩阵和公开只读/可编辑、快捷键、引用、折叠、图片校验和存储后端、代码着色、剪贴板里的跨块内容、大页面里未改动块保持原对象、按环境变量选择 SQLite 或 PostgreSQL，以及页面历史的合并、上限和恢复权限。当前 137 个通过。
 
-`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。本地默认仍是 SQLite。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、含图片的页面复制、跨块粘贴、并发冲突、一次和连续多次保存失败后的重试、搜索高亮和范围筛选、私有页搜索隔离、窄屏侧栏、横竖屏切换、行内链接的添加修改移除和分享页点击、公开只读与可编辑、侧栏展开状态跨浏览器保持、块的缩进和层级拖拽。当前 59 个通过。第一次跑之前需要 `npx playwright install chromium`。
+`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。本地默认仍是 SQLite。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、含图片的页面复制、跨块粘贴、并发冲突、一次和连续多次保存失败后的重试、搜索高亮和范围筛选、私有页搜索隔离、窄屏侧栏、横竖屏切换、行内链接的添加修改移除和分享页点击、公开只读与可编辑、侧栏展开状态跨浏览器保持、块的缩进和层级拖拽、页面历史的合并、预览、恢复和只读成员。当前 62 个通过。第一次跑之前需要 `npx playwright install chromium`。
 
 320 块页面的计时不在默认端到端里。开发模式用 `npx playwright test --config playwright.bench.config.ts`。生产构建先 `npm run build`，再跑 `npx playwright test --config playwright.bench.prod.config.ts`。两次生产测量里，第 320 块在 130 ms 和 165 ms 出现，文档响应是 42 ms 和 59 ms。
 
-阶段说明和总体验收在 [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md)。分阶段文档：[docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。加固的自检在 [docs/CI_SETUP.md](docs/CI_SETUP.md)、[docs/INLINE_LINKS.md](docs/INLINE_LINKS.md)、[docs/IMAGE_STORAGE.md](docs/IMAGE_STORAGE.md)、[docs/PERMISSIONS_AND_TOGGLE.md](docs/PERMISSIONS_AND_TOGGLE.md) 和 [docs/FOLIO_NEXT_AUDIT.md](docs/FOLIO_NEXT_AUDIT.md)。第三轮：[docs/NESTED_BLOCKS.md](docs/NESTED_BLOCKS.md)、[docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+阶段说明和总体验收在 [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md)。分阶段文档：[docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。加固的自检在 [docs/CI_SETUP.md](docs/CI_SETUP.md)、[docs/INLINE_LINKS.md](docs/INLINE_LINKS.md)、[docs/IMAGE_STORAGE.md](docs/IMAGE_STORAGE.md)、[docs/PERMISSIONS_AND_TOGGLE.md](docs/PERMISSIONS_AND_TOGGLE.md) 和 [docs/FOLIO_NEXT_AUDIT.md](docs/FOLIO_NEXT_AUDIT.md)。第三轮：[docs/NESTED_BLOCKS.md](docs/NESTED_BLOCKS.md)、[docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)、[docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)。
 
 重置本地数据：
 
@@ -139,3 +139,4 @@ npm run db:reset
 - 在 Folio 里跨块复制会带上格式、链接和空块。贴到别的程序时只剩 Markdown 或纯文本，空段落可能被折掉。
 - 置顶跟页面走，收藏跟用户走。
 - 本地默认是 SQLite 文件，适合单机演示，不适合多进程同时写。部署到 Vercel 时改用 PostgreSQL，步骤在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+- 页面历史把同一人 5 分钟内的连续保存收成一条。只读成员能看历史，不能恢复。公开链接那一页没有历史。说明在 [docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)。

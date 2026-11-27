@@ -68,6 +68,21 @@ export type PageDetail = PageMeta & {
   revision: number
 }
 
+export type PageHistoryEntry = {
+  id: string
+  editorId: string
+  editorName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type PageHistoryPreview = PageHistoryEntry & {
+  title: string
+  icon: string
+  cover: string
+  blocks: BlockDTO[]
+}
+
 export type WorkspaceDTO = {
   id: string
   name: string

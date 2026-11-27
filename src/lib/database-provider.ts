@@ -70,6 +70,7 @@ export function resetStatements(provider: DatabaseProvider) {
       "PRAGMA foreign_keys = OFF",
       'DELETE FROM "Favorite"',
       'DELETE FROM "Block"',
+      'DELETE FROM "PageSnapshot"',
       'DELETE FROM "Page"',
       'DELETE FROM "WorkspaceMember"',
       'DELETE FROM "Workspace"',
@@ -80,10 +81,31 @@ export function resetStatements(provider: DatabaseProvider) {
   return [
     'DELETE FROM "Favorite"',
     'DELETE FROM "Block"',
+    'DELETE FROM "PageSnapshot"',
     'DELETE FROM "Page"',
     'DELETE FROM "UserPreference"',
     'DELETE FROM "WorkspaceMember"',
     'DELETE FROM "Workspace"',
     'DELETE FROM "User"',
+  ]
+}
+
+export function pageHistoryStatements(provider: DatabaseProvider) {
+  const timestamp = provider === "postgresql" ? "TIMESTAMP(3)" : "DATETIME"
+  return [
+    `CREATE TABLE IF NOT EXISTS "PageSnapshot" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "pageId" TEXT NOT NULL,
+  "editorId" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "icon" TEXT NOT NULL,
+  "cover" TEXT NOT NULL,
+  "blocks" TEXT NOT NULL,
+  "createdAt" ${timestamp} NOT NULL,
+  "updatedAt" ${timestamp} NOT NULL,
+  CONSTRAINT "PageSnapshot_pageId_fkey" FOREIGN KEY ("pageId") REFERENCES "Page" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "PageSnapshot_editorId_fkey" FOREIGN KEY ("editorId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+)`,
+    `CREATE INDEX IF NOT EXISTS "PageSnapshot_pageId_updatedAt_idx" ON "PageSnapshot"("pageId", "updatedAt")`,
   ]
 }

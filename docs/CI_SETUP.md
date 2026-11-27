@@ -18,7 +18,7 @@
 | `check` | `npm test` | Vitest 单元测试。这一项必须通过 |
 | `e2e` | 同样的检出、Node、`npm ci`，系统是 Ubuntu 24.04 | 与 lint job 隔离，互不等待 |
 | `e2e` | `npx playwright install --with-deps chromium` | 安装 Chromium 和系统库 |
-| `e2e` | `npm run test:e2e` | `prisma db push`、播种、再跑 Playwright。服务器由配置里的 `webServer` 启动 `next dev` |
+| `e2e` | `npm run test:e2e` | `prisma db push`、补页面历史表、播种、再跑 Playwright。服务器由配置里的 `webServer` 启动 `next dev` |
 | `e2e` | 失败时 `actions/upload-artifact@v4` | 上传 `test-results`，里面有失败用例的截图、录像和 trace |
 
 没有单独配置密钥。`scripts/ensure-env.cjs` 在没有 `.env` 时复制 `.env.example`，其中是本地 SQLite 路径和开发用 `AUTH_SECRET`。数据库文件留在 runner 上，任务结束即丢弃。
@@ -90,7 +90,7 @@ PR 运行的日志里：`npm run lint` 打印 `No ESLint warnings or errors`；`
 
 ## PostgreSQL 作业
 
-第三轮阶段 2 加了第三个 job，`playwright on postgres`。上面两个 job 仍用 SQLite，步骤没有改。新 job 在 Ubuntu 24.04 上启动 `postgres:16`，用户、密码和库名都是 `folio`，再跑 `npm test` 和 `npm run test:e2e`。地址固定为 `127.0.0.1`，并带 `sslmode=disable`，避免 `localhost` 解析到 IPv6 或本机证书握手失败。部署步骤和取舍在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+第三轮阶段 2 加了第三个 job，`playwright on postgres`。上面两个 job 仍用 SQLite，步骤没有改。新 job 在 Ubuntu 24.04 上启动 `postgres:16`，用户、密码和库名都是 `folio`，再跑 `npm test` 和 `npm run test:e2e`。地址固定为 `127.0.0.1`，并带 `sslmode=disable`，避免 `localhost` 解析到 IPv6 或本机证书握手失败。部署步骤和取舍在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。阶段 3 的 `PageSnapshot` 表由同一套 `db push` 在两种数据库上建出来，`test:e2e` 还会再跑一遍幂等的建表脚本。
 
 ## 当前限制
 

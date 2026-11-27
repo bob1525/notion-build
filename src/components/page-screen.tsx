@@ -1,10 +1,11 @@
 "use client"
 
-import { ChevronRight, Eye, Globe, Link2, Lock, Pin, Star, Trash2 } from "lucide-react"
+import { ChevronRight, Eye, Globe, History, Link2, Lock, Pin, Star, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { BlockEditor, type BlockEditorHandle } from "@/components/block-editor"
+import { PageHistoryDialog } from "@/components/page-history-dialog"
 import { BlockView } from "@/components/block-view"
 import { blocksFromMarkdown, markdownDraftFrom, MarkdownPane } from "@/components/markdown-pane"
 import { Button, Dialog, useToast } from "@/components/ui"
@@ -40,8 +41,12 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const [iconOpen, setIconOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [conflictOpen, setConflictOpen] = useState(false)
+  const [conflictKind, setConflictKind] = useState<"save" | "restore">("save")
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   const favoriteLock = useRef(false)
   const conflictLock = useRef(false)
+  const pendingRestore = useRef<string | null>(null)
   const flushing = useRef(false)
   const flushAgain = useRef(false)
   const metaRef = useRef(meta)
@@ -134,9 +139,11 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
       return "again" as const
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
+        pendingRestore.current = null
         conflictLock.current = true
         if (timer.current) clearTimeout(timer.current)
         dirty.current = true
+        setConflictKind("save")
         setStatus("conflict")
         setConflictOpen(true)
         return "conflict" as const
@@ -169,6 +176,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   }
 
   async function discardConflict() {
+    pendingRestore.current = null
     try {
       const latest = await api<PageDetail>(`/api/pages/${metaRef.current.id}`)
       conflictLock.current = false
@@ -183,8 +191,53 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   }
 
   async function overwriteConflict() {
+    const snapshotId = pendingRestore.current
     setConflictOpen(false)
+    if (snapshotId) {
+      pendingRestore.current = null
+      conflictLock.current = false
+      await restoreSnapshot(snapshotId, true)
+      return
+    }
     await flush(true)
+  }
+
+  async function restoreSnapshot(snapshotId: string, overwrite = false) {
+    if (!overwrite && (dirty.current || flushing.current)) {
+      toast("还有没保存的修改。等保存完成后再恢复。")
+      return
+    }
+    setRestoring(true)
+    try {
+      const saved = await api<PageDetail>(`/api/pages/${metaRef.current.id}/history/${snapshotId}/restore`, {
+        method: "POST",
+        body: JSON.stringify({ baseRevision: metaRef.current.revision, overwrite }),
+      })
+      pendingRestore.current = null
+      conflictLock.current = false
+      dirty.current = false
+      if (timer.current) clearTimeout(timer.current)
+      applyPage(saved)
+      setStatus("saved")
+      setConflictOpen(false)
+      setHistoryOpen(false)
+      toast("已恢复这个版本")
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        pendingRestore.current = snapshotId
+        conflictLock.current = true
+        if (timer.current) clearTimeout(timer.current)
+        dirty.current = true
+        setConflictKind("restore")
+        setStatus("conflict")
+        setHistoryOpen(false)
+        setConflictOpen(true)
+        return
+      }
+      toast(error instanceof ApiError ? error.message : "没有恢复这个版本")
+    } finally {
+      setRestoring(false)
+    }
   }
 
   function commitMeta(patch: Partial<PageDetail>, save = true) {
@@ -441,6 +494,15 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
               <Trash2 size={13} /> 删除
             </button>
           ) : null}
+          <button
+            type="button"
+            data-testid="page-history"
+            onClick={() => setHistoryOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-black/[0.05]"
+          >
+            <History size={13} />
+            历史
+          </button>
           <span data-testid="save-status" className="ml-auto text-xs text-faint">
             {statusText}
             {status === "error" ? (
@@ -508,8 +570,20 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         ) : null}
       </div>
 
-      <Dialog open={conflictOpen} title="这篇页面在别处被修改了" onClose={() => setConflictOpen(true)} testId="conflict-dialog">
-        <p className="text-sm leading-6 text-muted">你这次的修改还没写进去。覆盖会用你现在的内容替换已经保存的版本。放弃并刷新会丢掉你还没保存的修改，改回最新内容。</p>
+      <PageHistoryDialog
+        open={historyOpen}
+        pageId={meta.id}
+        canRestore={canEdit}
+        restoring={restoring}
+        onClose={() => setHistoryOpen(false)}
+        onRestore={(snapshotId) => void restoreSnapshot(snapshotId)}
+      />
+      <Dialog open={conflictOpen} title={conflictKind === "restore" ? "恢复时发现页面已被修改" : "这篇页面在别处被修改了"} onClose={() => setConflictOpen(true)} testId="conflict-dialog">
+        <p className="text-sm leading-6 text-muted">
+          {conflictKind === "restore"
+            ? "这份历史还没写回去。覆盖会用所选版本替换当前页面，并记成一条新历史。放弃并刷新会保持别人刚保存的内容。"
+            : "你这次的修改还没写进去。覆盖会用你现在的内容替换已经保存的版本。放弃并刷新会丢掉你还没保存的修改，改回最新内容。"}
+        </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="soft" data-testid="conflict-discard" onClick={() => void discardConflict()}>放弃并刷新</Button>
           <Button data-testid="conflict-overwrite" onClick={() => void overwriteConflict()}>覆盖</Button>
