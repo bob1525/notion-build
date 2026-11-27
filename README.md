@@ -1,1 +1,155 @@
-# notion-build
+# Folio
+
+一个安静、清晰的块式知识库。可以注册登录，在多个工作区里用嵌套页面写笔记，按块编辑，也可以切到 Markdown。风格尽量靠近 Notion：侧栏、大标题、少装饰。外观默认跟随系统，也可以固定成浅色或深色。
+
+## 技术栈
+
+- Next.js 15（App Router）+ React 19 + TypeScript
+- Tailwind CSS
+- Prisma 6。本地默认 SQLite，生产用 PostgreSQL，见 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)
+- 自研块编辑器（快捷键、`/` 菜单、Markdown 往返）
+- 认证：bcrypt 密码哈希，JWT 放在 HttpOnly cookie
+- 测试：Vitest、Playwright
+
+## 本地启动
+
+需要 Node.js 20 或更新版本。
+
+```bash
+npm install
+cp .env.example .env
+npm run setup
+npx playwright install chromium
+npm run dev
+```
+
+浏览器打开 [http://localhost:3000](http://localhost:3000)。`npm run setup` 会生成 Prisma Client、创建 `prisma/dev.db` 并写入种子数据。
+
+GitHub Actions 在每次 push 和 pull request 上跑同一套检查：`npm ci`、lint、typecheck、`npm test`，以及 Playwright。另外会起一个 PostgreSQL，再把单元测试和端到端跑一遍。说明在 [docs/CI_SETUP.md](docs/CI_SETUP.md)。放到公网的步骤在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+
+生产构建：
+
+```bash
+npm run build
+npm start
+```
+
+## 种子账号
+
+两个账号的密码都是 `folio-demo`。
+
+| 名字 | 邮箱 | 能进的工作区 |
+| --- | --- | --- |
+| Nash | nash@folio.dev | 产品工作台（所有者）、研究笔记、个人空间 |
+| Mia | mia@folio.dev | 产品工作台、研究笔记 |
+
+登录页可以一键填入 Nash 的账号。种子里有三个工作区、多层嵌套页面，以及标题、段落、列表、待办、代码块和分割线。
+
+## 功能
+
+- 注册、登录、退出
+- 多个工作区，侧栏里切换
+- 页面树可以拖拽换顺序、拖进另一页，或拖出来升一级。不能拖进自己或子页面
+- 块编辑：标题、段落、无序 / 有序列表、待办、引用、折叠、代码块、分割线、图片
+- 块内格式：加粗、斜体、删除线、行内代码、链接。可用 `**`、`*`、`~~`、`` ` `` 和 `[文字](https://…)`，也可以用 Cmd/Ctrl+B、I、Shift+X、E。选中文字后用 Cmd/Ctrl+K 或浮动条添加、修改、移除链接。只接受 http 和 https，`javascript:` 不会变成可点链接。编辑时从小框里的「打开」进入新标签，分享页和 Markdown 预览可以直接点
+- 块可以拖握把排序，也可以拖进另一块，或用 Tab / Shift+Tab 改层级。代码块里的 Tab 仍插入两个空格。不能拖进自己的子孙。编辑时最多 8 层。松手后自动保存。说明在 [docs/NESTED_BLOCKS.md](docs/NESTED_BLOCKS.md)
+- 引用和折叠可以嵌套段落。折叠的收起状态会保存
+- 图片可以用 https 地址插入，也可以上传 png / jpeg / gif / webp，并在小、中、大之间切换。默认 `IMAGE_STORAGE=local`，文件在 `public/uploads`。没有持久磁盘时设 `IMAGE_STORAGE=s3`，并配 `S3_BUCKET`、`S3_ENDPOINT`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`、`S3_PUBLIC_BASE_URL`（`S3_REGION` 默认为 `auto`）。变量说明在 `.env.example`，Vercel 这类环境的配法在 [docs/IMAGE_STORAGE.md](docs/IMAGE_STORAGE.md)
+- 代码块可选语言。JavaScript、Python、CSS 有基础着色
+- 快捷键：`#`、`##`、`###`、`-`、`1.`、`[]` 加空格，以及 `---` 和 ` ``` `
+- Markdown 编辑和预览，可以切回块
+- 复制页面。可以选择只复制这一页，或连同子页面一起复制。标题会加上「副本」
+- 搜索可以看全部、只看标题或只看正文。命中的词会高亮。私有页不会出现在其他人的结果里
+- 收藏（每个人自己的）和置顶（同级排序，看见这篇的人都会看到）
+- 可见性有三档。私有只有作者能打开。公开只读时，其他成员和分享链接都只能看。公开可编辑时，成员能改正文，但不能改权限、置顶、移动或删除。两种公开链接未登录时都只能阅读
+- 空状态、加载骨架、错误提示和保存状态用同一套字号和颜色。窄屏侧栏是抽屉，点进页面、新建或切换工作区后会收起，Esc 也能关掉
+- 编辑后约 500 毫秒自动保存。保存失败时提示原因，并可以手动重试
+- 同一页在别处保存过时，后提交的人会看到冲突，可以选择覆盖，或放弃并刷新
+- 自动保存会记下页面历史。同一人 5 分钟内的连续保存收成一条，换一个人马上新开一条。可以看时间、编辑者，预览旧版本并恢复。恢复本身是一次新的保存。说明在 [docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)
+- 同一页上的其他成员显示在标题下面，标明正在查看或正在编辑。别人保存后出现「有新版本」。没有未保存修改时，刷新直接换成新版本；还有未保存修改时会先询问。能打开这篇的登录成员在分享页上也能看到其他人，未登录的人看不到。说明在 [docs/PRESENCE.md](docs/PRESENCE.md)
+- 外观默认跟随系统。侧栏底部、登录页和分享页都可以改成浅色或深色。选择记在这台浏览器里，刷新后还在
+
+## 界面
+
+登录。
+
+![登录](docs/screenshots/login.png)
+
+工作区首页，侧栏里是收藏和嵌套页面。
+
+![工作区](docs/screenshots/workspace.png)
+
+块编辑。欢迎页包含列表、待办和代码块。
+
+![编辑器](docs/screenshots/editor.png)
+
+搜索可以切到全部、标题或正文，命中的词会高亮。
+
+![搜索](docs/screenshots/search.png)
+
+引用、折叠、代码着色和本地图片。
+
+![新块](docs/screenshots/blocks.png)
+
+别处已经保存过时，后一次修改会停在冲突提示上。
+
+![冲突](docs/screenshots/conflict.png)
+
+Markdown 源码和预览并排。
+
+![Markdown](docs/screenshots/markdown.png)
+
+公开页可以不登录阅读。
+
+![分享](docs/screenshots/share.png)
+
+窄屏下侧栏收进抽屉，加号直接可见。
+
+![移动端](docs/screenshots/mobile.png)
+
+没有页面时，侧栏和主区域用同一套空状态。
+
+![空状态](docs/screenshots/empty.png)
+
+## 测试
+
+```bash
+npm test
+npm run test:e2e
+```
+
+`npm test` 跑单元测试，覆盖块编辑、行内格式和链接、Markdown 往返、搜索排序和标题/正文筛选、页面树拖拽和复制、权限矩阵和公开只读/可编辑、快捷键、引用、折叠、图片校验和存储后端、代码着色、剪贴板里的跨块内容、大页面里未改动块保持原对象、按环境变量选择 SQLite 或 PostgreSQL，页面历史的合并、上限和恢复权限，同一页上其他人的在线状态和新版本提示，浅色 / 深色如何跟随系统，过期在线记录的清扫和「内容没变就采用新版本」，历史时间的时区偏移，以及登录后外观跟随账号。当前 150 个通过。
+
+`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。本地默认仍是 SQLite。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、含图片的页面复制、跨块粘贴、并发冲突、一次和连续多次保存失败后的重试、搜索高亮和范围筛选、私有页搜索隔离、窄屏侧栏、横竖屏切换、行内链接的添加修改移除和分享页点击、公开只读与可编辑、侧栏展开状态跨浏览器保持、块的缩进和层级拖拽、页面历史的合并、预览、恢复和只读成员、同一页上的其他成员，别人保存后的刷新，外观跟随系统并在分享页上切换，浅色和深色下登录、编辑、历史和分享页上的键盘与 axe 检查，过期在线记录的清扫，分享页上成员可见而访客不可见，刷新前提示未保存的修改，浏览器离开前的未保存提示，历史列表的本地时区，公开分享页上能看历史、只读不能恢复，以及登录后的外观在另一台浏览器里保持、并盖过这台浏览器里不同的选择。当前 78 个通过。第一次跑之前需要 `npx playwright install chromium`。
+
+在本机 PostgreSQL 上再跑一遍同一套端到端：
+
+```bash
+DATABASE_URL=postgresql://folio:folio@127.0.0.1:5432/folio?sslmode=disable DATABASE_PROVIDER=postgresql npm run test:e2e
+npx prisma generate
+```
+
+第二条把本地 Prisma Client 换回 SQLite。放到公网的步骤在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+
+320 块页面的计时不在默认端到端里。开发模式用 `npx playwright test --config playwright.bench.config.ts`。生产构建先 `npm run build`，再跑 `npx playwright test --config playwright.bench.prod.config.ts`。第三轮再测时，第 320 块在 230 ms、148 ms 和复核的 162 ms 出现，文档响应是 48 ms、44 ms 和 46 ms。原先的生产基线是 130 ms、165 ms 和 42 ms、59 ms。数字在 [docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。
+
+阶段说明和总体验收在 [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md)。分阶段文档：[docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。加固的自检在 [docs/CI_SETUP.md](docs/CI_SETUP.md)、[docs/INLINE_LINKS.md](docs/INLINE_LINKS.md)、[docs/IMAGE_STORAGE.md](docs/IMAGE_STORAGE.md)、[docs/PERMISSIONS_AND_TOGGLE.md](docs/PERMISSIONS_AND_TOGGLE.md) 和 [docs/FOLIO_NEXT_AUDIT.md](docs/FOLIO_NEXT_AUDIT.md)。第三轮：[docs/NESTED_BLOCKS.md](docs/NESTED_BLOCKS.md)、[docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)、[docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)、[docs/PRESENCE.md](docs/PRESENCE.md)，总审计在 [docs/FOLIO_ROUND3_AUDIT.md](docs/FOLIO_ROUND3_AUDIT.md)。
+
+重置本地数据：
+
+```bash
+npm run db:reset
+```
+
+## 已知限制
+
+- 能看到同一页上的其他成员，别人保存后会提示「有新版本」。没有未保存修改时，刷新会换成新版本。还有未保存修改时会先询问。正在写的人如果不刷新就保存，后提交仍会停在冲突提示上，要选择覆盖或放弃并刷新。这不是同时编辑同一段文字。分享页只让能打开这篇的登录成员看到其他人。说明在 [docs/PRESENCE.md](docs/PRESENCE.md)。
+- 块内有加粗、斜体、删除线、行内代码和链接。斜体用倾斜变换，占位宽度和光标一致。链接只接受 http 和 https，编辑时要点「打开」，分享页和预览里可以直接点。
+- 可以上传图片。单张不超过 2MB，只接受 png、jpeg、gif、webp。默认写在本机 `public/uploads`，没有持久磁盘时要改成对象存储。
+- 块可以拖拽换顺序和层级，也可以用 Tab 缩进。不能拖进自己的子孙，编辑时最多 8 层。页面树可以换顺序和层级；置顶页仍排在同级未置顶页前面。
+- 公开分成只读和可编辑。可编辑的成员能改正文，不能改权限、置顶或删除。公开链接两种都只能阅读。侧栏展开状态按用户保存在服务端。
+- 在 Folio 里跨块复制会带上格式、链接和空块。贴到别的程序时只剩 Markdown 或纯文本，空段落可能被折掉。
+- 置顶跟页面走，收藏跟用户走。
+- 本地默认是 SQLite 文件，适合单机演示，不适合多进程同时写。部署到 Vercel 时改用 PostgreSQL，步骤在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+- 页面历史把同一人 5 分钟内的连续保存收成一条。只读成员能看历史，不能恢复。公开链接上也能看历史，不能恢复的人没有恢复按钮。列表时间用观看者的本地时区，并标出偏移。说明在 [docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)。
+- 登录后的外观记在账号上，换浏览器也会跟着走。没登录的页面，包括登录页和匿名分享页，仍只用这台浏览器。说明在 [docs/THEME_PREFERENCE.md](docs/THEME_PREFERENCE.md)。
