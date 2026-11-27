@@ -131,4 +131,6 @@ axe 使用 `@axe-core/playwright`，只把 `critical` 和 `serious` 当成失败
 
 ## GitHub Actions
 
-本地命令和 CI 的步骤相同。CI 有三条 job：`lint, typecheck, unit`、SQLite 的 `playwright`、PostgreSQL 的 `playwright on postgres`。一次 push 会同时产生 push 和 pull request 两条运行。分支头通过之后，把这两条运行的链接补在这里。
+本地命令和 CI 的步骤相同。CI 有三条 job：`lint, typecheck, unit`、SQLite 的 `playwright`、PostgreSQL 的 `playwright on postgres`。一次 push 会同时产生 push 和 pull request 两条运行。
+
+提交 `5af775a` 的 pull request 运行 [45993951115](https://github.com/bob1525/notion-build/actions/runs/45993951115) 通过。lint、typecheck 和单元测试 1 分 19 秒；SQLite 的 Playwright 11 分 20 秒；PostgreSQL 上的 Playwright 12 分 57 秒。同一提交的 push 运行 [45993942618](https://github.com/bob1525/notion-build/actions/runs/45993942618) 也通过：单元测试 1 分 22 秒，SQLite Playwright 11 分 34 秒，PostgreSQL Playwright 11 分 13 秒。六条 job 都是成功。Node.js 20 的弃用提示如果还在，不影响结果。
