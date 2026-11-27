@@ -88,9 +88,14 @@ PR 运行的日志里：`npm run lint` 打印 `No ESLint warnings or errors`；`
 
 `gh run list` 这次没有列出运行，REST API `repos/bob1525/notion-build/actions/runs` 可以看见。查看结果以 Actions 页面或这个 API 为准。
 
+## PostgreSQL 作业
+
+第三轮阶段 2 加了第三个 job，`playwright on postgres`。上面两个 job 仍用 SQLite，步骤没有改。新 job 在 Ubuntu 24.04 上启动 `postgres:16`，用户、密码和库名都是 `folio`，再跑 `npm test` 和 `npm run test:e2e`。地址固定为 `127.0.0.1`，并带 `sslmode=disable`，避免 `localhost` 解析到 IPv6 或本机证书握手失败。部署步骤和取舍在 [docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)。
+
 ## 当前限制
 
 - 端到端已经纳入 workflow，并且是必须通过的 job，不是可有可无的一步。单元测试在 `check` job，不依赖浏览器。
+- `playwright on postgres` 也是必须通过的 job。它再跑一遍单元测试和端到端，不替代 SQLite 的那两条。
 - 端到端 job 固定 Ubuntu 24.04。当时的 `ubuntu-latest` 是 26.04，Playwright 1.57 装不上 Chromium 依赖。
 - 端到端用 `next dev`，和本地 `npm run test:e2e` 相同，不是 `next build && next start`。一次大约数分钟，还要下载 Chromium。
 - 没有缓存 Playwright 浏览器。每次 job 都重新安装，换来的是和 lockfile 里的 Playwright 版本一致。

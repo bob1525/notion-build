@@ -1,5 +1,7 @@
+import fs from "node:fs"
 import { PrismaClient } from "@prisma/client"
 import bcrypt from "bcryptjs"
+import { mergeEnv, parseDotEnv, resetStatements, resolveDatabaseProvider } from "../src/lib/database-provider"
 import { DEMO_PASSWORD, DEMO_USERS } from "../src/lib/demo-accounts"
 import { IDS, SEARCH_WORDS, TITLES, WORKSPACES } from "../src/lib/seed-ids"
 
@@ -61,15 +63,19 @@ async function makePage(input: {
   })
 }
 
+function loadProjectEnv() {
+  if (!fs.existsSync(".env")) return
+  const merged = mergeEnv(process.env, parseDotEnv(fs.readFileSync(".env", "utf8")))
+  for (const [key, value] of Object.entries(merged)) {
+    if (value !== undefined && process.env[key] === undefined) process.env[key] = value
+  }
+}
+
 async function main() {
-  await prisma.$executeRawUnsafe("PRAGMA foreign_keys = OFF")
-  await prisma.$executeRawUnsafe('DELETE FROM "Favorite"')
-  await prisma.$executeRawUnsafe('DELETE FROM "Block"')
-  await prisma.$executeRawUnsafe('DELETE FROM "Page"')
-  await prisma.$executeRawUnsafe('DELETE FROM "WorkspaceMember"')
-  await prisma.$executeRawUnsafe('DELETE FROM "Workspace"')
-  await prisma.$executeRawUnsafe('DELETE FROM "User"')
-  await prisma.$executeRawUnsafe("PRAGMA foreign_keys = ON")
+  loadProjectEnv()
+  for (const statement of resetStatements(resolveDatabaseProvider(process.env))) {
+    await prisma.$executeRawUnsafe(statement)
+  }
 
   const passwordHash = bcrypt.hashSync(DEMO_PASSWORD, 10)
   await prisma.user.createMany({

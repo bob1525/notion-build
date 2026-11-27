@@ -4,17 +4,18 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/ensure-env.cjs && next dev",
-    "build": "node scripts/ensure-env.cjs && next build",
+    "build": "node scripts/ensure-env.cjs && tsx scripts/db-prepare.ts --generate-only && next build",
     "start": "node scripts/ensure-env.cjs && next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node scripts/ensure-env.cjs && prisma db push && tsx scripts/apply-visibility-migration.ts && tsx prisma/seed.ts && playwright test",
-    "db:push": "node scripts/ensure-env.cjs && prisma db push && tsx scripts/apply-visibility-migration.ts",
+    "test:e2e": "node scripts/ensure-env.cjs && tsx scripts/db-prepare.ts --push-only && tsx scripts/apply-visibility-migration.ts && tsx prisma/seed.ts && playwright test",
+    "db:push": "node scripts/ensure-env.cjs && tsx scripts/db-prepare.ts --push-only && tsx scripts/apply-visibility-migration.ts",
     "db:seed": "node scripts/ensure-env.cjs && tsx prisma/seed.ts",
-    "db:reset": "node scripts/ensure-env.cjs && rm -f prisma/dev.db prisma/dev.db-journal && prisma db push && tsx scripts/apply-visibility-migration.ts && tsx prisma/seed.ts",
-    "setup": "node scripts/ensure-env.cjs && prisma generate && prisma db push && tsx scripts/apply-visibility-migration.ts && tsx prisma/seed.ts",
+    "db:reset": "node scripts/ensure-env.cjs && tsx scripts/db-prepare.ts --reset && tsx scripts/apply-visibility-migration.ts && tsx prisma/seed.ts",
+    "db:deploy": "node scripts/ensure-env.cjs && tsx scripts/db-prepare.ts && tsx scripts/apply-visibility-migration.ts",
+    "setup": "node scripts/ensure-env.cjs && tsx scripts/db-prepare.ts && tsx scripts/apply-visibility-migration.ts && tsx prisma/seed.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
