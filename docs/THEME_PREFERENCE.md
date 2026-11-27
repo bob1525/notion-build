@@ -65,7 +65,7 @@ npm run test:e2e
 
 这一阶段新增单元测试 2 个、端到端 3 个。原先的 148 个单元测试和 75 个端到端仍在通过的集合里。加上这一阶段之后，总数是 150 个单元测试和 78 个端到端。
 
-GitHub Actions 的运行链接在这次提交的分支头跑绿之后补上。
+GitHub Actions 上提交 `11fff97` 的 pull request 运行 [46048962879](https://github.com/bob1525/notion-build/actions/runs/46048962879) 通过。lint、typecheck 和单元测试 35 秒；SQLite 的 Playwright 16 分 16 秒；PostgreSQL 上的 Playwright 12 分 31 秒。同一提交的 push 运行 [46048956018](https://github.com/bob1525/notion-build/actions/runs/46048956018) 也通过：单元测试 34 秒，SQLite Playwright 12 分 0 秒，PostgreSQL Playwright 17 分 15 秒。三条 job 都是成功。Node.js 20 的弃用提示还在，不影响结果。
 
 ## 限制
 
