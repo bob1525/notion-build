@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db"
 import { asBlockType, asCover, asRole, asVisibility, clampIcon, cleanTitle, displayTitle, pickWorkspaceId } from "@/lib/format"
 import { canReadPageHistory, canRestorePageHistory, parseSnapshotBlocks } from "@/lib/page-history"
 import { canDeletePage, canEditPage, canFindInSearch, canManageVisibility, canMovePage, canSharePage, canViewPage, pageSaveError } from "@/lib/permissions"
+import { readStoredTheme, reconcileTheme, type ThemePreference } from "@/lib/theme"
 import { readSidebar, writeSidebar } from "@/lib/ui-state"
 import { searchPages, type SearchScope } from "@/lib/search"
 import { breadcrumbTitles, planPageCopy, planPageMove } from "@/lib/tree"
@@ -18,15 +19,23 @@ import { ConflictError, HttpError } from "@/server/http"
 import { recordPageSnapshot } from "@/server/snapshots"
 import type { Page } from "@prisma/client"
 
+const themeSchema = z.enum(["system", "light", "dark"])
+
 export const registerSchema = z.object({
   name: z.string().trim().min(1, "请填写名字").max(40, "名字太长了"),
   email: z.string().trim().email("邮箱格式不正确").max(120),
   password: z.string().min(8, "密码至少 8 位").max(72, "密码太长了"),
+  theme: themeSchema.optional(),
 })
 
 export const loginSchema = z.object({
   email: z.string().trim().email("邮箱格式不正确"),
   password: z.string().min(1, "请填写密码"),
+  theme: themeSchema.optional(),
+})
+
+export const themePreferenceSchema = z.object({
+  theme: themeSchema,
 })
 
 export const createWorkspaceSchema = z.object({
@@ -308,7 +317,8 @@ export async function registerUser(input: z.infer<typeof registerSchema>) {
     },
   })
   const account: UserDTO = { id: user.id, email: user.email, name: user.name }
-  return { user: account, workspaceId: workspace.id }
+  const theme = await syncAccountTheme(user.id, input.theme ?? null)
+  return { user: account, workspaceId: workspace.id, theme }
 }
 
 export async function loginUser(input: z.infer<typeof loginSchema>) {
@@ -318,10 +328,33 @@ export async function loginUser(input: z.infer<typeof loginSchema>) {
     throw new HttpError(401, "邮箱或密码不正确")
   }
   const workspaces = await listWorkspaces(user.id)
+  const theme = await syncAccountTheme(user.id, input.theme ?? null)
   return {
     user: { id: user.id, email: user.email, name: user.name } satisfies UserDTO,
     workspaceId: workspaces[0]?.id ?? null,
+    theme,
   }
+}
+
+export async function readAccountTheme(userId: string): Promise<ThemePreference | null> {
+  const saved = await prisma.userPreference.findUnique({ where: { userId }, select: { theme: true } })
+  return readStoredTheme(saved?.theme)
+}
+
+export async function saveAccountTheme(userId: string, theme: ThemePreference) {
+  await prisma.userPreference.upsert({
+    where: { userId },
+    update: { theme },
+    create: { userId, theme },
+  })
+  return theme
+}
+
+export async function syncAccountTheme(userId: string, local: ThemePreference | null) {
+  const account = await readAccountTheme(userId)
+  const decision = reconcileTheme(account, local)
+  if (decision.persist) await saveAccountTheme(userId, decision.persist)
+  return account || decision.persist ? decision.applied : null
 }
 
 export async function createWorkspace(userId: string, input: z.infer<typeof createWorkspaceSchema>) {

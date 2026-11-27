@@ -96,7 +96,7 @@ describe("schema and seed sql", () => {
   it("keeps the sqlite reset statements and uses deletes for postgresql", () => {
     const sqlite = resetStatements("sqlite")
     expect(
-      sqlite.filter((statement) => statement !== 'DELETE FROM "PageSnapshot"' && statement !== 'DELETE FROM "PagePresence"'),
+      sqlite.filter((statement) => statement !== 'DELETE FROM "PageSnapshot"' && statement !== 'DELETE FROM "PagePresence"' && statement !== 'DELETE FROM "UserPreference"'),
     ).toEqual([
       "PRAGMA foreign_keys = OFF",
       'DELETE FROM "Favorite"',
@@ -113,6 +113,8 @@ describe("schema and seed sql", () => {
     expect(sqlite.indexOf('DELETE FROM "PagePresence"')).toBeGreaterThan(sqlite.indexOf('DELETE FROM "Block"'))
     expect(sqlite.indexOf('DELETE FROM "PagePresence"')).toBeLessThan(sqlite.indexOf('DELETE FROM "Page"'))
     expect(sqlite.indexOf('DELETE FROM "PagePresence"')).toBeLessThan(sqlite.indexOf('DELETE FROM "User"'))
+    expect(sqlite.indexOf('DELETE FROM "UserPreference"')).toBeGreaterThan(sqlite.indexOf('DELETE FROM "Page"'))
+    expect(sqlite.indexOf('DELETE FROM "UserPreference"')).toBeLessThan(sqlite.indexOf('DELETE FROM "User"'))
     const postgres = resetStatements("postgresql")
     expect(postgres.some((statement) => statement.includes("PRAGMA"))).toBe(false)
     expect(postgres.indexOf('DELETE FROM "Favorite"')).toBeLessThan(postgres.indexOf('DELETE FROM "Page"'))

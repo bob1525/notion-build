@@ -3,11 +3,12 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { ThemeToggle } from "@/components/theme-toggle"
+import { ThemeToggle, applyTheme } from "@/components/theme-toggle"
 import { Button, Logo } from "@/components/ui"
 import { ApiError, api } from "@/lib/api-client"
 import { DEMO_USERS } from "@/lib/demo-accounts"
 import { safeNextPath } from "@/lib/format"
+import { THEME_STORAGE_KEY, readStoredTheme, type ThemePreference } from "@/lib/theme"
 
 export function AuthScreen({ mode }: { mode: "login" | "register" }) {
   const router = useRouter()
@@ -24,11 +25,18 @@ export function AuthScreen({ mode }: { mode: "login" | "register" }) {
     setError(null)
     try {
       const path = isLogin ? "/api/auth/login" : "/api/auth/register"
-      const body = isLogin ? { email, password } : { name, email, password }
-      const result = await api<{ workspaceId: string | null }>(path, {
+      let theme: ThemePreference | null = null
+      try {
+        theme = readStoredTheme(localStorage.getItem(THEME_STORAGE_KEY))
+      } catch {
+        theme = null
+      }
+      const body = isLogin ? { email, password, ...(theme ? { theme } : {}) } : { name, email, password, ...(theme ? { theme } : {}) }
+      const result = await api<{ workspaceId: string | null; theme: ThemePreference | null }>(path, {
         method: "POST",
         body: JSON.stringify(body),
       })
+      if (result.theme) applyTheme(result.theme)
       const next = new URLSearchParams(window.location.search).get("next")
       const fallback = result.workspaceId ? `/w/${result.workspaceId}` : "/start"
       router.push(safeNextPath(next, fallback))

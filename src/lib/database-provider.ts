@@ -73,6 +73,7 @@ export function resetStatements(provider: DatabaseProvider) {
       'DELETE FROM "PageSnapshot"',
       'DELETE FROM "PagePresence"',
       'DELETE FROM "Page"',
+      'DELETE FROM "UserPreference"',
       'DELETE FROM "WorkspaceMember"',
       'DELETE FROM "Workspace"',
       'DELETE FROM "User"',

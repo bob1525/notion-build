@@ -2,6 +2,9 @@ import type { Metadata } from "next"
 import { Inter, JetBrains_Mono } from "next/font/google"
 import Script from "next/script"
 import { ToastProvider } from "@/components/ui"
+import { themeBootScript } from "@/lib/theme"
+import { getCurrentUser } from "@/server/auth"
+import { readAccountTheme } from "@/server/content"
 import "./globals.css"
 
 const sans = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" })
@@ -12,22 +15,13 @@ export const metadata: Metadata = {
   description: "一个安静、清晰的块式知识库。",
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await getCurrentUser()
+  const accountTheme = user ? await readAccountTheme(user.id) : null
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body className={`${sans.variable} ${mono.variable} font-sans antialiased`}>
-        <Script id="folio-theme" strategy="beforeInteractive">{`
-          (function () {
-            try {
-              var stored = localStorage.getItem("folio-theme");
-              var preference = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
-              var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-              var theme = preference === "system" ? (systemDark ? "dark" : "light") : preference;
-              document.documentElement.setAttribute("data-theme", theme);
-              document.documentElement.style.colorScheme = theme;
-            } catch (e) {}
-          })();
-        `}</Script>
+        <Script id="folio-theme" strategy="beforeInteractive">{themeBootScript(accountTheme)}</Script>
         <Script id="folio-link-key" strategy="beforeInteractive">{`
           document.addEventListener("keydown", function (event) {
             if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
