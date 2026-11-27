@@ -52,7 +52,7 @@ function validParent(block: BlockDTO, byId: Map<string, BlockDTO>) {
   while (current) {
     if (seen.has(current)) return ""
     const parent = byId.get(current)
-    if (!parent || (parent.type !== "quote" && parent.type !== "toggle")) return ""
+    if (!parent) return ""
     seen.add(current)
     current = parent.parentId
   }

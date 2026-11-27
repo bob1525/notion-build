@@ -43,27 +43,121 @@ export function updateBlock(blocks: BlockDTO[], id: string, patch: Partial<Block
   return withPositions(blocks.map((block) => (block.id === id ? { ...block, ...patch, id: block.id } : block)))
 }
 
+export const MAX_BLOCK_DEPTH = 7
+export const BLOCK_MOVE_SELF = "不能把块拖到自己身上"
+export const BLOCK_MOVE_DESCENDANT = "不能把块拖进自己的子块"
+export const BLOCK_MOVE_DEPTH = "块最多嵌套 8 层"
+export const BLOCK_MOVE_MISSING = "找不到这个块"
+
+export type BlockPlacement = "before" | "after" | "inside"
+export type BlockMoveResult = { ok: true; blocks: BlockDTO[] } | { ok: false; message: string }
+
+export function outlineBlocks(blocks: BlockDTO[]) {
+  const ids = new Set(blocks.map((block) => block.id))
+  const groups = new Map<string, BlockDTO[]>()
+  for (const block of blocks) {
+    const key = block.parentId && ids.has(block.parentId) ? block.parentId : ""
+    const list = groups.get(key)
+    if (list) list.push(block)
+    else groups.set(key, [block])
+  }
+  const ordered: BlockDTO[] = []
+  const seen = new Set<string>()
+  const walk = (parentId: string, hidden: boolean) => {
+    for (const block of groups.get(parentId) ?? []) {
+      if (seen.has(block.id)) continue
+      seen.add(block.id)
+      if (!hidden) ordered.push(block)
+      walk(block.id, hidden || (block.type === "toggle" && block.collapsed))
+    }
+  }
+  walk("", false)
+  return ordered
+}
+
+function blockDepth(blocks: BlockDTO[], id: string) {
+  const byId = new Map(blocks.map((block) => [block.id, block]))
+  let depth = 0
+  let current = byId.get(id)?.parentId ?? ""
+  const seen = new Set<string>([id])
+  while (current) {
+    if (seen.has(current) || !byId.has(current)) break
+    seen.add(current)
+    depth += 1
+    current = byId.get(current)?.parentId ?? ""
+  }
+  return depth
+}
+
+function subtreeHeight(blocks: BlockDTO[], id: string) {
+  let max = 0
+  const walk = (current: string, depth: number, seen: Set<string>) => {
+    if (seen.has(current)) return
+    seen.add(current)
+    if (depth > max) max = depth
+    for (const block of blocks) {
+      if (block.parentId === current) walk(block.id, depth + 1, seen)
+    }
+  }
+  walk(id, 0, new Set())
+  return max
+}
+
+function subtreeList(blocks: BlockDTO[], id: string) {
+  const ids = new Set(subtreeIds(blocks, id))
+  return blocks.filter((block) => ids.has(block.id))
+}
+
+function insertAfterSubtree(blocks: BlockDTO[], targetId: string, incoming: BlockDTO[]) {
+  const ids = new Set(subtreeIds(blocks, targetId))
+  let last = blocks.findIndex((block) => block.id === targetId)
+  blocks.forEach((block, index) => {
+    if (ids.has(block.id)) last = Math.max(last, index)
+  })
+  const at = last < 0 ? blocks.length : last + 1
+  return [...blocks.slice(0, at), ...incoming, ...blocks.slice(at)]
+}
+
+export function moveNestedBlock(blocks: BlockDTO[], sourceId: string, targetId: string, placement: BlockPlacement): BlockMoveResult {
+  if (sourceId === targetId) return { ok: false, message: BLOCK_MOVE_SELF }
+  const source = blocks.find((block) => block.id === sourceId)
+  const target = blocks.find((block) => block.id === targetId)
+  if (!source || !target) return { ok: false, message: BLOCK_MOVE_MISSING }
+  const descendants = new Set(subtreeIds(blocks, sourceId))
+  const destinationParent = placement === "inside" ? targetId : target.parentId
+  if (destinationParent && descendants.has(destinationParent)) return { ok: false, message: BLOCK_MOVE_DESCENDANT }
+  const nextDepth = destinationParent ? blockDepth(blocks, destinationParent) + 1 : 0
+  if (nextDepth + subtreeHeight(blocks, sourceId) > MAX_BLOCK_DEPTH) return { ok: false, message: BLOCK_MOVE_DEPTH }
+
+  const moving = subtreeList(blocks, sourceId).map((block) => (block.id === sourceId ? { ...block, parentId: destinationParent } : block))
+  const rest = blocks
+    .filter((block) => !descendants.has(block.id))
+    .map((block) => (placement === "inside" && block.id === targetId && block.type === "toggle" ? { ...block, collapsed: false } : block))
+  const inserted = placement === "before"
+    ? (() => {
+        const at = rest.findIndex((block) => block.id === targetId)
+        const index = at < 0 ? rest.length : at
+        return [...rest.slice(0, index), ...moving, ...rest.slice(index)]
+      })()
+    : insertAfterSubtree(rest, targetId, moving)
+  return { ok: true, blocks: withPositions(inserted) }
+}
+
 export function moveBlock(blocks: BlockDTO[], id: string, direction: -1 | 1) {
-  const index = blocks.findIndex((block) => block.id === id)
-  const target = index + direction
-  if (index < 0 || target < 0 || target >= blocks.length) return blocks
-  const next = [...blocks]
-  const [item] = next.splice(index, 1)
-  next.splice(target, 0, item)
-  return withPositions(next)
+  const block = blocks.find((item) => item.id === id)
+  if (!block) return blocks
+  const siblings = blocks.filter((item) => item.parentId === block.parentId)
+  const index = siblings.findIndex((item) => item.id === id)
+  const target = siblings[index + direction]
+  if (!target) return blocks
+  const result = moveNestedBlock(blocks, id, target.id, direction < 0 ? "before" : "after")
+  return result.ok ? result.blocks : blocks
 }
 
 export function reorderBlocks(blocks: BlockDTO[], sourceId: string, targetId: string, placement: "before" | "after") {
   if (sourceId === targetId) return blocks
-  const sourceIndex = blocks.findIndex((block) => block.id === sourceId)
-  if (sourceIndex < 0 || !blocks.some((block) => block.id === targetId)) return blocks
-  const next = [...blocks]
-  const [item] = next.splice(sourceIndex, 1)
-  let insertAt = next.findIndex((block) => block.id === targetId)
-  if (insertAt < 0) return blocks
-  if (placement === "after") insertAt += 1
-  next.splice(insertAt, 0, item)
-  return withPositions(next)
+  const result = moveNestedBlock(blocks, sourceId, targetId, placement)
+  return result.ok ? result.blocks : blocks
 }
 
 export function insertBlockAfter(blocks: BlockDTO[], id: string, block: BlockDTO) {
@@ -156,22 +250,44 @@ export function insertChild(blocks: BlockDTO[], parentId: string, block: BlockDT
   return withPositions(next)
 }
 
-export function nestUnderPrevious(blocks: BlockDTO[], id: string) {
+export function indentBlock(blocks: BlockDTO[], id: string): BlockMoveResult {
   const block = blocks.find((item) => item.id === id)
-  if (!block) return blocks
+  if (!block) return { ok: false, message: BLOCK_MOVE_MISSING }
   const siblings = blocks.filter((item) => item.parentId === block.parentId)
-  const index = siblings.findIndex((item) => item.id === id)
-  const previous = siblings[index - 1]
-  if (!previous || (previous.type !== "quote" && previous.type !== "toggle")) return blocks
-  if (subtreeIds(blocks, id).includes(previous.id)) return blocks
-  return withPositions(blocks.map((item) => (item.id === id ? { ...item, parentId: previous.id } : item)))
+  const previous = siblings[siblings.findIndex((item) => item.id === id) - 1]
+  if (!previous) return { ok: false, message: "前面没有可以缩进到的块" }
+  return moveNestedBlock(blocks, id, previous.id, "inside")
+}
+
+export function nestUnderPrevious(blocks: BlockDTO[], id: string) {
+  const result = indentBlock(blocks, id)
+  return result.ok ? result.blocks : blocks
 }
 
 export function unnestBlock(blocks: BlockDTO[], id: string) {
   const block = blocks.find((item) => item.id === id)
   if (!block?.parentId) return blocks
   const parent = blocks.find((item) => item.id === block.parentId)
-  return withPositions(blocks.map((item) => (item.id === id ? { ...item, parentId: parent?.parentId ?? "" } : item)))
+  if (!parent) return withPositions(blocks.map((item) => (item.id === id ? { ...item, parentId: "" } : item)))
+  const siblings = blocks.filter((item) => item.parentId === block.parentId)
+  const following = siblings.slice(siblings.findIndex((item) => item.id === id) + 1)
+  const followingIds = new Set<string>()
+  for (const sibling of following) {
+    for (const childId of subtreeIds(blocks, sibling.id)) followingIds.add(childId)
+  }
+  const ownIds = new Set(subtreeIds(blocks, id))
+  const removed = new Set<string>([...ownIds, ...followingIds])
+  const own = blocks.filter((item) => ownIds.has(item.id)).map((item) => (item.id === id ? { ...item, parentId: parent.parentId } : item))
+  const adopted = blocks.filter((item) => followingIds.has(item.id)).map((item) => (following.some((sibling) => sibling.id === item.id) ? { ...item, parentId: id } : item))
+  const rest = blocks.filter((item) => !removed.has(item.id))
+  return withPositions(insertAfterSubtree(rest, parent.id, [...own, ...adopted]))
+}
+
+export function outdentBlock(blocks: BlockDTO[], id: string): BlockMoveResult {
+  const block = blocks.find((item) => item.id === id)
+  if (!block) return { ok: false, message: BLOCK_MOVE_MISSING }
+  if (!block.parentId) return { ok: false, message: "这一块已经在最外层" }
+  return { ok: true, blocks: unnestBlock(blocks, id) }
 }
 
 export function removeBlock(blocks: BlockDTO[], id: string): EditorResult {

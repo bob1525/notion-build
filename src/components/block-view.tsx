@@ -6,18 +6,29 @@ import { cn } from "@/lib/cn"
 import { imageWidthOf } from "@/lib/image-source"
 import type { BlockDTO } from "@/lib/types"
 
+function nestedTestId(type: BlockDTO["type"]) {
+  if (type === "quote") return "quote-children"
+  if (type === "toggle") return "toggle-body"
+  return "nested-blocks"
+}
+
 function BlockTree({ blocks, items }: { blocks: BlockDTO[]; items: BlockDTO[] }) {
   return (
     <>
       {items.map((block, index) => {
         const children = blocks.filter((item) => item.parentId === block.id)
+        const nested = children.length && !(block.type === "toggle" && block.collapsed) ? (
+          <div data-testid={nestedTestId(block.type)} className="mt-1 ml-3 border-l border-black/10 pl-3">
+            <BlockTree blocks={blocks} items={children} />
+          </div>
+        ) : null
+        let body
         if (block.type === "divider") {
-          return <DividerRule key={block.id} />
-        }
-        if (block.type === "image") {
+          body = <DividerRule />
+        } else if (block.type === "image") {
           const width = imageWidthOf(block.width)
-          return (
-            <figure key={block.id} data-testid="image-frame" data-width={width} className={cn("image-frame", `image-${width}`)}>
+          body = (
+            <figure data-testid="image-frame" data-width={width} className={cn("image-frame", `image-${width}`)}>
               {block.src ? (
                 // User-supplied addresses and local uploads are not known to the image optimizer.
                 // eslint-disable-next-line @next/next/no-img-element
@@ -27,27 +38,18 @@ function BlockTree({ blocks, items }: { blocks: BlockDTO[]; items: BlockDTO[] })
               )}
             </figure>
           )
-        }
-        if (block.type === "code") {
-          return (
-            <pre key={block.id} className="overflow-x-auto rounded-md bg-sidebar px-3 py-2.5 font-mono text-[13.5px] leading-6 text-ink">
+        } else if (block.type === "code") {
+          body = (
+            <pre className="overflow-x-auto rounded-md bg-sidebar px-3 py-2.5 font-mono text-[13.5px] leading-6 text-ink">
               {block.language ? <div className="mb-1 text-[11px] uppercase tracking-wide text-faint">{block.language}</div> : null}
               <code>
                 <CodeText code={block.content} language={block.language} />
               </code>
             </pre>
           )
-        }
-        const marker = listMarker(block.type, index, items)
-        const nested = (
-          children.length && !(block.type === "toggle" && block.collapsed) ? (
-            <div data-testid={block.type === "quote" ? "quote-children" : "toggle-body"} className="mt-1 ml-3 border-l border-black/10 pl-3">
-              <BlockTree blocks={blocks} items={children} />
-            </div>
-          ) : null
-        )
-        return (
-          <div key={block.id} className={cn(block.type === "quote" && "folio-quote")} data-block-type={block.type} data-collapsed={block.type === "toggle" ? String(block.collapsed) : undefined}>
+        } else {
+          const marker = listMarker(block.type, index, items)
+          body = (
             <div className={cn("flex gap-2", blockTextClass(block.type, "w-auto"))}>
               {block.type === "todo" ? <input type="checkbox" checked={block.checked} readOnly className="mt-1.5 h-4 w-4 accent-ink" /> : null}
               {block.type === "toggle" ? <span className={cn("mt-1.5 text-muted", !block.collapsed && "rotate-90")}>▸</span> : null}
@@ -56,6 +58,11 @@ function BlockTree({ blocks, items }: { blocks: BlockDTO[]; items: BlockDTO[] })
                 {block.content ? <InlineText text={block.content} marks={block.marks} /> : " "}
               </div>
             </div>
+          )
+        }
+        return (
+          <div key={block.id} className={cn(block.type === "quote" && "folio-quote")} data-block-type={block.type} data-parent-id={block.parentId} data-collapsed={block.type === "toggle" ? String(block.collapsed) : undefined}>
+            {body}
             {nested}
           </div>
         )

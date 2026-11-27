@@ -1,4 +1,5 @@
 import { createBlock, withPositions } from "@/lib/blocks"
+import { outlineBlocks } from "@/lib/editor-state"
 import { imageUrlError } from "@/lib/image-source"
 import { blocksToMarkdown } from "@/lib/markdown"
 import { normalizeMarks } from "@/lib/rich-text"
@@ -12,12 +13,13 @@ export type ClipboardPayload =
   | { kind: "inline"; text: string; marks: InlineMark[] }
 
 export function blocksBetween(blocks: BlockDTO[], anchorId: string, focusId: string) {
-  const start = blocks.findIndex((block) => block.id === anchorId)
-  const end = blocks.findIndex((block) => block.id === focusId)
+  const ordered = outlineBlocks(blocks)
+  const start = ordered.findIndex((block) => block.id === anchorId)
+  const end = ordered.findIndex((block) => block.id === focusId)
   if (start < 0 || end < 0) return []
   const from = Math.min(start, end)
   const to = Math.max(start, end)
-  const selected = new Set(blocks.slice(from, to + 1).map((block) => block.id))
+  const selected = new Set(ordered.slice(from, to + 1).map((block) => block.id))
   let grew = true
   while (grew) {
     grew = false
@@ -170,6 +172,15 @@ export function paragraphsFromPlain(text: string) {
   return lines.map((line) => createBlock({ type: "paragraph", content: line }))
 }
 
+function rehomeRoots(clones: BlockDTO[], parentId: string) {
+  const ids = new Set(clones.map((block) => block.id))
+  return clones.map((block) => {
+    if (block.parentId && ids.has(block.parentId)) return block
+    if ((block.parentId ?? "") === parentId) return block
+    return { ...block, parentId }
+  })
+}
+
 function cloneIncoming(incoming: BlockDTO[], createId: () => string) {
   const idMap = new Map(incoming.map((block) => [block.id, createId()]))
   return incoming.map((block) =>
@@ -182,11 +193,11 @@ function cloneIncoming(incoming: BlockDTO[], createId: () => string) {
 }
 
 export function insertPastedBlocks(blocks: BlockDTO[], targetId: string, incoming: BlockDTO[], createId: () => string) {
-  const clones = cloneIncoming(incoming, createId)
-  if (!clones.length) return { blocks, focusId: targetId, caret: 0 }
   const index = blocks.findIndex((block) => block.id === targetId)
   if (index < 0) return { blocks, focusId: targetId, caret: 0 }
   const target = blocks[index]
+  const clones = rehomeRoots(cloneIncoming(incoming, createId), target.parentId ?? "")
+  if (!clones.length) return { blocks, focusId: targetId, caret: 0 }
   const focus = clones[clones.length - 1]
   const caret = focus.type === "divider" || focus.type === "image" ? 0 : focus.content.length
   const next =

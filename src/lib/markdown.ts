@@ -8,6 +8,44 @@ function isFenceClose(line: string) {
   return /^```\s*$/.test(line)
 }
 
+function readChildBody(lines: string[], start: number) {
+  const body: string[] = []
+  let depth = 1
+  let index = start
+  let codeFence = false
+  while (index < lines.length) {
+    const trimmed = lines[index].trim()
+    if (!codeFence && trimmed.startsWith("```")) {
+      codeFence = true
+      body.push(lines[index])
+      index += 1
+      continue
+    }
+    if (codeFence) {
+      if (isFenceClose(trimmed)) codeFence = false
+      body.push(lines[index])
+      index += 1
+      continue
+    }
+    if (trimmed === ":::child" || trimmed.startsWith(":::toggle") || trimmed.startsWith(":::image")) {
+      depth += 1
+      body.push(lines[index])
+      index += 1
+      continue
+    }
+    if (trimmed === ":::") {
+      depth -= 1
+      if (depth === 0) return { body, next: index + 1 }
+      body.push(lines[index])
+      index += 1
+      continue
+    }
+    body.push(lines[index])
+    index += 1
+  }
+  return { body, next: index }
+}
+
 function isSpecialLine(line: string) {
   return (
     /^```/.test(line) ||
@@ -96,7 +134,7 @@ export function markdownToBlocks(markdown: string): BlockDTO[] {
   const blocks: BlockDTO[] = []
   let index = 0
 
-  let lastContainer = ""
+  let lastBlockId = ""
 
   const push = (partial: {
     type: BlockType
@@ -123,7 +161,7 @@ export function markdownToBlocks(markdown: string): BlockDTO[] {
       position: blocks.length,
     })
     blocks.push(block)
-    if (block.type === "quote" || block.type === "toggle") lastContainer = block.id
+    lastBlockId = block.id
     return block
   }
 
@@ -135,16 +173,11 @@ export function markdownToBlocks(markdown: string): BlockDTO[] {
     }
 
     if (line.trim() === ":::child") {
-      const body: string[] = []
-      index += 1
-      while (index < lines.length && lines[index].trim() !== ":::") {
-        body.push(lines[index])
-        index += 1
-      }
-      if (index < lines.length) index += 1
-      const inner = markdownToBlocks(body.join("\n"))
+      const fenced = readChildBody(lines, index + 1)
+      index = fenced.next
+      const inner = markdownToBlocks(fenced.body.join("\n"))
       for (const child of inner) {
-        blocks.push(createBlock({ ...child, parentId: child.parentId || lastContainer, position: blocks.length }))
+        blocks.push(createBlock({ ...child, parentId: child.parentId || lastBlockId, position: blocks.length }))
       }
       continue
     }

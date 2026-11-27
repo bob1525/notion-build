@@ -12,12 +12,18 @@ export function blocksFromMarkdown(source: string, previous: BlockDTO[]) {
   const parsed = markdownToBlocks(source)
   if (!parsed.length) return []
   const used = new Set<string>()
-  return parsed.map((block, index) => {
+  const idMap = new Map<string, string>()
+  const assigned = parsed.map((block, index) => {
     const candidate = previous[index]?.id
     const id = candidate && !used.has(candidate) ? candidate : block.id
     used.add(id)
+    idMap.set(block.id, id)
     return { ...block, id, position: index }
   })
+  return assigned.map((block) => ({
+    ...block,
+    parentId: block.parentId ? (idMap.get(block.parentId) ?? "") : "",
+  }))
 }
 
 export function MarkdownPane({

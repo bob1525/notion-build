@@ -47,16 +47,20 @@ import {
 import { cn } from "@/lib/cn"
 import {
   backspaceAtStart,
+  BLOCK_MOVE_DEPTH,
+  BLOCK_MOVE_DESCENDANT,
+  indentBlock,
   insertBlockAfter,
   insertChild,
   moveBlock,
-  nestUnderPrevious,
+  moveNestedBlock,
+  outdentBlock,
+  outlineBlocks,
   removeBlock,
-  reorderBlocks,
   setBlockType,
   splitBlock,
-  unnestBlock,
   updateBlock,
+  type BlockPlacement,
 } from "@/lib/editor-state"
 import { applyTextChange, clearInlineLink, consumeInlineMarkup, linkCovering, mapCaret, marksAtCaret, marksCovering, sanitizeLinkHref, setInlineLink, toggleInlineMark } from "@/lib/rich-text"
 import { matchBlockShortcut } from "@/lib/shortcuts"
@@ -112,8 +116,6 @@ function placeholderFor(block: BlockDTO, active: boolean) {
   return ""
 }
 
-const EMPTY_BLOCKS: BlockDTO[] = []
-
 function sameBlocks(left: BlockDTO[], right: BlockDTO[]) {
   if (left === right) return true
   if (left.length !== right.length) return false
@@ -130,12 +132,14 @@ const RowGate = memo(function RowGate({
   marker: string | null
   active: boolean
   selected: boolean
-  drop: "before" | "after" | null
+  drop: BlockPlacement | null
+  blocked: boolean
+  nestedDrop: string
   childBlocks: BlockDTO[]
   render: () => ReactNode
 }) {
   return render()
-}, (prev, next) => prev.block === next.block && prev.active === next.active && prev.selected === next.selected && prev.drop === next.drop && prev.marker === next.marker && sameBlocks(prev.childBlocks, next.childBlocks))
+}, (prev, next) => prev.block === next.block && prev.active === next.active && prev.selected === next.selected && prev.drop === next.drop && prev.blocked === next.blocked && prev.nestedDrop === next.nestedDrop && prev.marker === next.marker && sameBlocks(prev.childBlocks, next.childBlocks))
 
 export type BlockEditorHandle = {
   focusFirst: () => void
@@ -167,7 +171,8 @@ export function BlockEditor({
   const [linkEditor, setLinkEditor] = useState<LinkEditorState | null>(null)
   const [linkBox, setLinkBox] = useState<{ left: number; top: number } | null>(null)
   const linkInputRef = useRef<HTMLInputElement>(null)
-  const [dropTarget, setDropTarget] = useState<{ id: string; placement: "before" | "after" } | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; placement: BlockPlacement; blocked: boolean } | null>(null)
+  const [moveError, setMoveError] = useState("")
   const [toolbar, setToolbar] = useState<{ left: number; top: number } | null>(null)
   const [blockRange, setBlockRange] = useState<{ anchorId: string; focusId: string } | null>(null)
   const dropRef = useRef(dropTarget)
@@ -389,20 +394,25 @@ export function BlockEditor({
   }
 
   function updateDrop(clientX: number, clientY: number) {
+    const sourceId = dragSource.current
     const element = document.elementFromPoint(clientX, clientY)
     const row = element?.closest<HTMLElement>("[data-block-id]")
     const id = row?.dataset.blockId
-    const source = blocksRef.current.find((item) => item.id === dragSource.current)
-    const targetBlock = blocksRef.current.find((item) => item.id === id)
-    if (!row || !id || id === dragSource.current || !source || !targetBlock || source.parentId !== targetBlock.parentId) {
+    if (!row || !id || !sourceId || id === sourceId) {
       dropRef.current = null
       setDropTarget(null)
       return
     }
-    const rect = row.getBoundingClientRect()
-    const next = { id, placement: (clientY < rect.top + rect.height / 2 ? "before" : "after") as "before" | "after" }
+    const shell = row.querySelector<HTMLElement>(":scope > [data-testid='block-shell']") ?? row
+    const rect = shell.getBoundingClientRect()
+    const ratio = rect.height ? (clientY - rect.top) / rect.height : 0.5
+    const placement: BlockPlacement = clientY > rect.bottom + 1 ? "inside" : ratio < 0.36 ? "before" : ratio > 0.64 ? "after" : "inside"
+    const plan = moveNestedBlock(blocksRef.current, sourceId, id, placement)
+    const next = { id, placement, blocked: !plan.ok }
     dropRef.current = next
     setDropTarget(next)
+    if (!plan.ok && (plan.message === BLOCK_MOVE_DESCENDANT || plan.message === BLOCK_MOVE_DEPTH)) setMoveError(plan.message)
+    else if (plan.ok) setMoveError("")
   }
 
   function choose(type: BlockType) {
@@ -471,19 +481,33 @@ export function BlockEditor({
   }
 
   const roots = blocks.filter((block) => !block.parentId)
+  const dropAncestors = new Set<string>()
+  if (dropTarget) {
+    const byId = new Map(blocks.map((block) => [block.id, block]))
+    const seen = new Set<string>()
+    let current = byId.get(dropTarget.id)?.parentId ?? ""
+    while (current && !seen.has(current)) {
+      seen.add(current)
+      dropAncestors.add(current)
+      current = byId.get(current)?.parentId ?? ""
+    }
+  }
+  const nestedDrop = dropTarget ? `${dropTarget.id}:${dropTarget.placement}:${dropTarget.blocked}` : ""
   const selectedIds = new Set(blockRange ? blocksBetween(blocks, blockRange.anchorId, blockRange.focusId).map((block) => block.id) : [])
   const menuView = useRef({ menu, activeIndex, formatItems, commands })
   menuView.current = { menu, activeIndex, formatItems, commands }
 
-  function renderList(items: BlockDTO[]) {
+  function renderList(items: BlockDTO[], depth = 0) {
     return items.map((block, index) => {
         const marker = listMarker(block.type, index, items)
         const active = activeId === block.id
         const selected = selectedIds.has(block.id)
         const drop = dropTarget?.id === block.id ? dropTarget.placement : null
-        const childBlocks = block.type === "quote" || block.type === "toggle" ? blocks.filter((item) => item.parentId === block.id) : EMPTY_BLOCKS
+        const blocked = Boolean(dropTarget?.id === block.id && dropTarget.blocked)
+        const childBlocks = blocks.filter((item) => item.parentId === block.id)
+        const showChildren = childBlocks.length > 0 && !(block.type === "toggle" && block.collapsed)
         return (
-          <RowGate key={block.id} block={block} marker={marker} active={active} selected={selected} drop={drop} childBlocks={childBlocks} render={() => (
+          <RowGate key={block.id} block={block} marker={marker} active={active} selected={selected} drop={drop} blocked={blocked} nestedDrop={dropAncestors.has(block.id) ? nestedDrop : ""} childBlocks={childBlocks} render={() => (
           <div
             ref={(node) => {
               if (node) rowRefs.current.set(block.id, node)
@@ -492,12 +516,16 @@ export function BlockEditor({
             data-testid="block"
             data-block-id={block.id}
             data-block-type={block.type}
+            data-parent-id={block.parentId}
+            data-depth={depth}
             data-block-selected={selected ? "true" : "false"}
             className={cn("group relative py-[2px]", selected && "rounded-md bg-black/[0.04]")}
             onFocus={() => setActiveId(block.id)}
           >
-            {dropTarget?.id === block.id && dropTarget.placement === "before" ? <div data-testid="drop-indicator" className="absolute inset-x-0 top-0 z-10 h-0.5 bg-sky-600" /> : null}
-            {dropTarget?.id === block.id && dropTarget.placement === "after" ? <div data-testid="drop-indicator" className="absolute inset-x-0 bottom-0 z-10 h-0.5 bg-sky-600" /> : null}
+            {drop === "after" ? <div data-testid="drop-indicator" data-placement="after" data-blocked={blocked ? "true" : "false"} className={cn("absolute inset-x-0 bottom-0 z-10 h-0.5", blocked ? "bg-danger" : "bg-sky-600")} /> : null}
+            <div data-testid="block-shell" className="relative">
+            {drop === "before" ? <div data-testid="drop-indicator" data-placement="before" data-blocked={blocked ? "true" : "false"} className={cn("absolute inset-x-0 top-0 z-10 h-0.5", blocked ? "bg-danger" : "bg-sky-600")} /> : null}
+            {drop === "inside" ? <div data-testid="drop-indicator" data-placement="inside" data-blocked={blocked ? "true" : "false"} className={cn("pointer-events-none absolute inset-1 z-10 rounded-md border-2", blocked ? "border-danger bg-danger/10" : "border-sky-600 bg-sky-600/10")} /> : null}
             <div
               className={cn(
                 "items-center gap-0.5 sm:absolute sm:-left-14 sm:top-1 sm:transition-opacity",
@@ -549,7 +577,14 @@ export function BlockEditor({
                     const target = dropRef.current
                     dropRef.current = null
                     setDropTarget(null)
-                    if (target) onChange(reorderBlocks(blocksRef.current, sourceId, target.id, target.placement))
+                    if (!target) return
+                    const plan = moveNestedBlock(blocksRef.current, sourceId, target.id, target.placement)
+                    if (!plan.ok) {
+                      if (plan.message === BLOCK_MOVE_DESCENDANT || plan.message === BLOCK_MOVE_DEPTH) setMoveError(plan.message)
+                      return
+                    }
+                    setMoveError("")
+                    onChange(plan.blocks)
                   }
                   window.addEventListener("pointermove", move)
                   window.addEventListener("pointerup", up)
@@ -567,6 +602,18 @@ export function BlockEditor({
                 data-testid="divider"
                 className="rounded px-1 py-2 outline-none focus-visible:bg-black/[0.03]"
                 onKeyDown={(event) => {
+                  if (event.key === "Tab") {
+                    event.preventDefault()
+                    const result = event.shiftKey ? outdentBlock(blocksRef.current, block.id) : indentBlock(blocksRef.current, block.id)
+                    if (!result.ok) {
+                      if (result.message === BLOCK_MOVE_DEPTH || result.message === BLOCK_MOVE_DESCENDANT) setMoveError(result.message)
+                      return
+                    }
+                    setMoveError("")
+                    onChange(result.blocks)
+                    focusBlock(block.id, 0)
+                    return
+                  }
                   if (event.key === "Backspace" || event.key === "Delete") {
                     event.preventDefault()
                     const result = removeBlock(blocksRef.current, block.id)
@@ -864,14 +911,17 @@ export function BlockEditor({
                         focusBlock(result.focusId, result.caret)
                         return
                       }
-                      if (event.key === "Tab" && block.type !== "code" && !menu && input.selectionStart === 0 && input.selectionEnd === 0) {
-                        const next = event.shiftKey ? unnestBlock(blocksRef.current, block.id) : nestUnderPrevious(blocksRef.current, block.id)
-                        if (next !== blocksRef.current) {
-                          event.preventDefault()
-                          onChange(next)
-                          focusBlock(block.id, 0)
+                      if (event.key === "Tab" && block.type !== "code" && !menu) {
+                        event.preventDefault()
+                        const result = event.shiftKey ? outdentBlock(blocksRef.current, block.id) : indentBlock(blocksRef.current, block.id)
+                        if (!result.ok) {
+                          if (result.message === BLOCK_MOVE_DEPTH || result.message === BLOCK_MOVE_DESCENDANT) setMoveError(result.message)
                           return
                         }
+                        setMoveError("")
+                        onChange(result.blocks)
+                        focusBlock(block.id, input.selectionStart ?? 0)
+                        return
                       }
                       if (block.type === "code" && event.key === "Tab") {
                         event.preventDefault()
@@ -893,7 +943,7 @@ export function BlockEditor({
                       if ((event.key === "ArrowUp" || event.key === "ArrowDown") && event.shiftKey && input.selectionStart === input.selectionEnd) {
                         const atEdge = event.key === "ArrowUp" ? input.selectionStart === 0 : input.selectionStart === input.value.length
                         if (atEdge) {
-                          const list = blocksRef.current
+                          const list = outlineBlocks(blocksRef.current)
                           const currentIndex = list.findIndex((item) => item.id === block.id)
                           const existing = rangeRef.current
                           const focusIndex = existing ? list.findIndex((item) => item.id === existing.focusId) : currentIndex
@@ -906,16 +956,24 @@ export function BlockEditor({
                         }
                       }
                       if (!event.shiftKey && rangeRef.current && (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Escape")) setRange(null)
-                      if (event.key === "ArrowUp" && input.selectionStart === 0 && input.selectionEnd === 0 && index > 0) {
-                        const previous = items[index - 1]
-                        event.preventDefault()
-                        focusBlock(previous.id, previous.type === "divider" || previous.type === "image" ? 0 : previous.content.length)
-                        return
+                      if (event.key === "ArrowUp" && input.selectionStart === 0 && input.selectionEnd === 0) {
+                        const visible = outlineBlocks(blocksRef.current)
+                        const position = visible.findIndex((item) => item.id === block.id)
+                        const previous = position > 0 ? visible[position - 1] : undefined
+                        if (previous) {
+                          event.preventDefault()
+                          focusBlock(previous.id, previous.type === "divider" || previous.type === "image" ? 0 : previous.content.length)
+                          return
+                        }
                       }
-                      if (event.key === "ArrowDown" && input.selectionStart === input.value.length && input.selectionEnd === input.value.length && index < items.length - 1) {
-                        const next = items[index + 1]
-                        event.preventDefault()
-                        focusBlock(next.id, 0)
+                      if (event.key === "ArrowDown" && input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+                        const visible = outlineBlocks(blocksRef.current)
+                        const position = visible.findIndex((item) => item.id === block.id)
+                        const next = position >= 0 ? visible[position + 1] : undefined
+                        if (next) {
+                          event.preventDefault()
+                          focusBlock(next.id, 0)
+                        }
                       }
                     }}
                     className={cn(
@@ -928,6 +986,7 @@ export function BlockEditor({
                 </div>
               </div>
             )}
+            </div>
             {block.type === "quote" || block.type === "toggle" ? (
               <div className="mt-1 ml-6">
                 <button
@@ -945,9 +1004,13 @@ export function BlockEditor({
                 </button>
                 {!block.collapsed ? (
                   <div data-testid={block.type === "quote" ? "quote-children" : "toggle-body"} className="border-l border-black/10 pl-3">
-                    {renderList(childBlocks)}
+                    {renderList(childBlocks, depth + 1)}
                   </div>
                 ) : null}
+              </div>
+            ) : showChildren ? (
+              <div data-testid="nested-blocks" className="ml-6 border-l border-black/10 pl-3">
+                {renderList(childBlocks, depth + 1)}
               </div>
             ) : null}
           </div>
@@ -958,6 +1021,11 @@ export function BlockEditor({
 
   return (
     <div data-testid="block-editor" className="relative">
+      {moveError ? (
+        <p data-testid="block-move-error" role="alert" className="pointer-events-none absolute right-0 top-0 z-20 max-w-sm rounded-md bg-red-50 px-2 py-1 text-xs leading-5 text-danger shadow-card">
+          {moveError}
+        </p>
+      ) : null}
       {renderList(roots)}
       {menu && coords
         ? createPortal(
