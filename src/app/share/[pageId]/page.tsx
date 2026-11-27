@@ -5,6 +5,8 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { Button, EmptyState, Logo } from "@/components/ui"
 import { cn } from "@/lib/cn"
 import { formatDateTime } from "@/lib/format"
+import { canRestorePageHistory } from "@/lib/page-history"
+import { ShareHistory } from "@/components/share-history"
 import { SharePresence } from "@/components/share-presence"
 import { getCurrentUser } from "@/server/auth"
 import { loadPageDetail, loadPublicPage } from "@/server/content"
@@ -21,6 +23,11 @@ export default async function SharePage({ params }: { params: Promise<{ pageId: 
   const viewer = await getCurrentUser()
   const access = viewer && page ? await loadPageDetail(viewer.id, page.id) : null
   const showPresence = access?.kind === "ok"
+  const canRestore = Boolean(
+    viewer &&
+    access?.kind === "ok" &&
+    canRestorePageHistory(viewer.id, access.page, access.role),
+  )
   if (!page) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center px-6">
@@ -50,9 +57,12 @@ export default async function SharePage({ params }: { params: Promise<{ pageId: 
       <article className="mx-auto w-full max-w-[760px] px-5 py-10">
         <div className="text-[56px] leading-none">{page.icon}</div>
         <h1 className="mt-3 text-[40px] font-bold tracking-tight">{page.title}</h1>
-        <p className="mb-8 mt-2 text-xs text-faint">
+        <p className="mt-2 text-xs text-faint">
           {page.authorName} · 编辑于 {formatDateTime(page.updatedAt)} · {page.visibility === "read" ? "公开只读" : "成员可编辑，此链接只读"}
         </p>
+        <div className="mb-8 mt-3">
+          <ShareHistory pageId={page.id} revision={page.revision} canRestore={canRestore} />
+        </div>
         {showPresence ? <SharePresence pageId={page.id} revision={page.revision} /> : null}
         <BlockView blocks={page.blocks} />
       </article>

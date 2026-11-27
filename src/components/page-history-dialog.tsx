@@ -5,7 +5,7 @@ import { BlockView } from "@/components/block-view"
 import { Button, Dialog, useToast } from "@/components/ui"
 import { ApiError, api } from "@/lib/api-client"
 import { cn } from "@/lib/cn"
-import { formatDateTime } from "@/lib/format"
+import { formatZonedDateTime } from "@/lib/format"
 import { PAGE_HISTORY_COALESCE_MS } from "@/lib/page-history"
 import type { PageHistoryEntry, PageHistoryPreview } from "@/lib/types"
 
@@ -14,6 +14,7 @@ export function PageHistoryDialog({
   pageId,
   canRestore,
   restoring,
+  historyPath,
   onClose,
   onRestore,
 }: {
@@ -21,6 +22,7 @@ export function PageHistoryDialog({
   pageId: string
   canRestore: boolean
   restoring: boolean
+  historyPath?: string
   onClose: () => void
   onRestore: (snapshotId: string) => void
 }) {
@@ -31,6 +33,7 @@ export function PageHistoryDialog({
   const [error, setError] = useState("")
   const previewToken = useRef(0)
   const minutes = PAGE_HISTORY_COALESCE_MS / 60_000
+  const listPath = historyPath ?? `/api/pages/${pageId}/history`
 
   useEffect(() => {
     if (!open) return
@@ -39,7 +42,7 @@ export function PageHistoryDialog({
     setPreview(null)
     setSelectedId("")
     setError("")
-    api<PageHistoryEntry[]>(`/api/pages/${pageId}/history`, { cache: "no-store" })
+    api<PageHistoryEntry[]>(listPath, { cache: "no-store" })
       .then((rows) => {
         if (!cancel) setItems(rows)
       })
@@ -51,14 +54,14 @@ export function PageHistoryDialog({
     return () => {
       cancel = true
     }
-  }, [open, pageId])
+  }, [open, listPath])
 
   async function openPreview(snapshotId: string) {
     const token = ++previewToken.current
     setSelectedId(snapshotId)
     setPreview(null)
     try {
-      const next = await api<PageHistoryPreview>(`/api/pages/${pageId}/history/${snapshotId}`, { cache: "no-store" })
+      const next = await api<PageHistoryPreview>(`${listPath}/${snapshotId}`, { cache: "no-store" })
       if (previewToken.current !== token) return
       setPreview(next)
     } catch (err: unknown) {
@@ -88,14 +91,15 @@ export function PageHistoryDialog({
                 data-snapshot-id={item.id}
                 data-editor={item.editorName}
                 aria-pressed={selectedId === item.id}
-                aria-label={`${formatDateTime(item.updatedAt)} ${item.editorName}`}
+                data-updated-at={item.updatedAt}
+                aria-label={`${formatZonedDateTime(item.updatedAt)} ${item.editorName}`}
                 onClick={() => void openPreview(item.id)}
                 className={cn(
                   "w-full rounded-md px-2 py-1.5 text-left",
                   selectedId === item.id ? "bg-white shadow-card" : "hover:bg-black/[0.04]",
                 )}
               >
-                <span className="block text-xs text-ink">{formatDateTime(item.updatedAt)}</span>
+                <span className="block text-xs text-ink">{formatZonedDateTime(item.updatedAt)}</span>
                 <span className="block text-xs text-muted">{item.editorName}</span>
               </button>
             ))}
@@ -107,7 +111,7 @@ export function PageHistoryDialog({
                   {preview.icon} {preview.title || "未命名"}
                 </h3>
                 <p className="mb-3 text-xs text-muted">
-                  {preview.editorName} · {formatDateTime(preview.updatedAt)}
+                  {preview.editorName} · {formatZonedDateTime(preview.updatedAt)}
                 </p>
                 <div data-testid="history-preview-body">
                   <BlockView blocks={preview.blocks} />

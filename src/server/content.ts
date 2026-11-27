@@ -474,9 +474,18 @@ async function historyAccess(userId: string, pageId: string) {
   return loaded
 }
 
-export async function listPageHistory(userId: string, pageId: string) {
-  await historyAccess(userId, pageId)
-  const rows = await prisma.pageSnapshot.findMany({
+function toHistoryEntry(row: { id: string; editorId: string; createdAt: Date; updatedAt: Date; editor: { name: string } }) {
+  return {
+    id: row.id,
+    editorId: row.editorId,
+    editorName: row.editor.name,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+async function snapshotRows(pageId: string) {
+  return prisma.pageSnapshot.findMany({
     where: { pageId },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     select: {
@@ -487,34 +496,50 @@ export async function listPageHistory(userId: string, pageId: string) {
       editor: { select: { name: true } },
     },
   })
-  return rows.map((row) => ({
-    id: row.id,
-    editorId: row.editorId,
-    editorName: row.editor.name,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  }))
 }
 
-export async function readPageHistory(userId: string, pageId: string, snapshotId: string) {
-  await historyAccess(userId, pageId)
+async function snapshotDetail(pageId: string, snapshotId: string) {
   const row = await prisma.pageSnapshot.findFirst({
     where: { id: snapshotId, pageId },
     include: { editor: { select: { name: true } } },
   })
   if (!row) throw new HttpError(404, "找不到这个历史版本")
-  const blocks = blocksFromSnapshot(row.blocks)
   return {
-    id: row.id,
-    editorId: row.editorId,
-    editorName: row.editor.name,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    ...toHistoryEntry(row),
     title: row.title,
     icon: row.icon,
     cover: asCover(row.cover),
-    blocks,
+    blocks: blocksFromSnapshot(row.blocks),
   }
+}
+
+async function requireSharedHistoryPage(pageId: string) {
+  const page = await prisma.page.findUnique({ where: { id: pageId }, select: { visibility: true } })
+  if (!page || !canSharePage({ visibility: asVisibility(page.visibility) })) {
+    throw new HttpError(404, "找不到这个页面")
+  }
+}
+
+export async function listPageHistory(userId: string, pageId: string) {
+  await historyAccess(userId, pageId)
+  const rows = await snapshotRows(pageId)
+  return rows.map(toHistoryEntry)
+}
+
+export async function listPublicPageHistory(pageId: string) {
+  await requireSharedHistoryPage(pageId)
+  const rows = await snapshotRows(pageId)
+  return rows.map(toHistoryEntry)
+}
+
+export async function readPageHistory(userId: string, pageId: string, snapshotId: string) {
+  await historyAccess(userId, pageId)
+  return snapshotDetail(pageId, snapshotId)
+}
+
+export async function readPublicPageHistory(pageId: string, snapshotId: string) {
+  await requireSharedHistoryPage(pageId)
+  return snapshotDetail(pageId, snapshotId)
 }
 
 export async function restorePageHistory(
