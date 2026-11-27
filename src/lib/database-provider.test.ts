@@ -4,6 +4,7 @@ import {
   mergeEnv,
   parseDotEnv,
   pageHistoryStatements,
+  presenceStatements,
   renderPrismaSchema,
   resetStatements,
   resolveDatabaseProvider,
@@ -94,7 +95,9 @@ describe("schema and seed sql", () => {
 
   it("keeps the sqlite reset statements and uses deletes for postgresql", () => {
     const sqlite = resetStatements("sqlite")
-    expect(sqlite.filter((statement) => statement !== 'DELETE FROM "PageSnapshot"')).toEqual([
+    expect(
+      sqlite.filter((statement) => statement !== 'DELETE FROM "PageSnapshot"' && statement !== 'DELETE FROM "PagePresence"'),
+    ).toEqual([
       "PRAGMA foreign_keys = OFF",
       'DELETE FROM "Favorite"',
       'DELETE FROM "Block"',
@@ -107,6 +110,9 @@ describe("schema and seed sql", () => {
     expect(sqlite.indexOf('DELETE FROM "PageSnapshot"')).toBeGreaterThan(sqlite.indexOf('DELETE FROM "Block"'))
     expect(sqlite.indexOf('DELETE FROM "PageSnapshot"')).toBeLessThan(sqlite.indexOf('DELETE FROM "Page"'))
     expect(sqlite.indexOf('DELETE FROM "PageSnapshot"')).toBeLessThan(sqlite.indexOf('DELETE FROM "User"'))
+    expect(sqlite.indexOf('DELETE FROM "PagePresence"')).toBeGreaterThan(sqlite.indexOf('DELETE FROM "Block"'))
+    expect(sqlite.indexOf('DELETE FROM "PagePresence"')).toBeLessThan(sqlite.indexOf('DELETE FROM "Page"'))
+    expect(sqlite.indexOf('DELETE FROM "PagePresence"')).toBeLessThan(sqlite.indexOf('DELETE FROM "User"'))
     const postgres = resetStatements("postgresql")
     expect(postgres.some((statement) => statement.includes("PRAGMA"))).toBe(false)
     expect(postgres.indexOf('DELETE FROM "Favorite"')).toBeLessThan(postgres.indexOf('DELETE FROM "Page"'))
@@ -114,6 +120,8 @@ describe("schema and seed sql", () => {
     expect(postgres.indexOf('DELETE FROM "WorkspaceMember"')).toBeLessThan(postgres.indexOf('DELETE FROM "Workspace"'))
     expect(postgres.indexOf('DELETE FROM "PageSnapshot"')).toBeLessThan(postgres.indexOf('DELETE FROM "Page"'))
     expect(postgres.indexOf('DELETE FROM "PageSnapshot"')).toBeLessThan(postgres.indexOf('DELETE FROM "User"'))
+    expect(postgres.indexOf('DELETE FROM "PagePresence"')).toBeLessThan(postgres.indexOf('DELETE FROM "Page"'))
+    expect(postgres.indexOf('DELETE FROM "PagePresence"')).toBeLessThan(postgres.indexOf('DELETE FROM "User"'))
   })
 
   it("creates the page history table for both sqlite and postgresql", () => {
@@ -133,5 +141,25 @@ describe("schema and seed sql", () => {
     expect(postgres.join("\n")).not.toContain("PRAGMA")
     expect(postgres.join("\n")).toContain('REFERENCES "Page" ("id") ON DELETE CASCADE')
     expect(postgres.join("\n")).toContain('REFERENCES "User" ("id") ON DELETE CASCADE')
+  })
+
+  it("creates the presence table for both sqlite and postgresql", () => {
+    const sqlite = presenceStatements("sqlite")
+    const postgres = presenceStatements("postgresql")
+    const migration = fs.readFileSync("prisma/migrations/20261127140000_page_presence/migration.sql", "utf8")
+    expect(sqlite[0]).toContain("DATETIME")
+    expect(sqlite[0]).not.toContain("TIMESTAMP")
+    expect(postgres[0]).toContain("TIMESTAMP(3)")
+    expect(postgres[0]).not.toContain("DATETIME")
+    for (const statement of sqlite) {
+      expect(migration).toContain(statement)
+      expect(statement).toContain("PagePresence")
+    }
+    expect(migration).not.toContain("TIMESTAMP")
+    expect(sqlite.join("\n")).toContain("ON DELETE CASCADE")
+    expect(postgres.join("\n")).not.toContain("PRAGMA")
+    expect(postgres.join("\n")).toContain('REFERENCES "Page" ("id") ON DELETE CASCADE')
+    expect(postgres.join("\n")).toContain('REFERENCES "User" ("id") ON DELETE CASCADE')
+    expect(sqlite[1]).toContain('("pageId", "userId")')
   })
 })

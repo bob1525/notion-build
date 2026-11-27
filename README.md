@@ -115,13 +115,13 @@ npm test
 npm run test:e2e
 ```
 
-`npm test` 跑单元测试，覆盖块编辑、行内格式和链接、Markdown 往返、搜索排序和标题/正文筛选、页面树拖拽和复制、权限矩阵和公开只读/可编辑、快捷键、引用、折叠、图片校验和存储后端、代码着色、剪贴板里的跨块内容、大页面里未改动块保持原对象、按环境变量选择 SQLite 或 PostgreSQL，以及页面历史的合并、上限和恢复权限。当前 137 个通过。
+`npm test` 跑单元测试，覆盖块编辑、行内格式和链接、Markdown 往返、搜索排序和标题/正文筛选、页面树拖拽和复制、权限矩阵和公开只读/可编辑、快捷键、引用、折叠、图片校验和存储后端、代码着色、剪贴板里的跨块内容、大页面里未改动块保持原对象、按环境变量选择 SQLite 或 PostgreSQL，页面历史的合并、上限和恢复权限，以及同一页上其他人的在线状态和新版本提示。当前 142 个通过。
 
-`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。本地默认仍是 SQLite。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、含图片的页面复制、跨块粘贴、并发冲突、一次和连续多次保存失败后的重试、搜索高亮和范围筛选、私有页搜索隔离、窄屏侧栏、横竖屏切换、行内链接的添加修改移除和分享页点击、公开只读与可编辑、侧栏展开状态跨浏览器保持、块的缩进和层级拖拽、页面历史的合并、预览、恢复和只读成员。当前 62 个通过。第一次跑之前需要 `npx playwright install chromium`。
+`npm run test:e2e` 会先推送数据库并重新播种，再用 Playwright 打开应用。本地默认仍是 SQLite。覆盖错误密码、注册、创建并嵌套页面、编辑块、搜索、切换工作区、收藏、置顶、Markdown、空工作区、私有页、分享链接，以及块拖拽、空块光标、富文本保存、斜体对齐、引用、折叠、图片上传、代码高亮、页面树拖拽、页面复制、含图片的页面复制、跨块粘贴、并发冲突、一次和连续多次保存失败后的重试、搜索高亮和范围筛选、私有页搜索隔离、窄屏侧栏、横竖屏切换、行内链接的添加修改移除和分享页点击、公开只读与可编辑、侧栏展开状态跨浏览器保持、块的缩进和层级拖拽、页面历史的合并、预览、恢复和只读成员、同一页上的其他成员，以及别人保存后的刷新。当前 64 个通过。第一次跑之前需要 `npx playwright install chromium`。
 
 320 块页面的计时不在默认端到端里。开发模式用 `npx playwright test --config playwright.bench.config.ts`。生产构建先 `npm run build`，再跑 `npx playwright test --config playwright.bench.prod.config.ts`。两次生产测量里，第 320 块在 130 ms 和 165 ms 出现，文档响应是 42 ms 和 59 ms。
 
-阶段说明和总体验收在 [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md)。分阶段文档：[docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。加固的自检在 [docs/CI_SETUP.md](docs/CI_SETUP.md)、[docs/INLINE_LINKS.md](docs/INLINE_LINKS.md)、[docs/IMAGE_STORAGE.md](docs/IMAGE_STORAGE.md)、[docs/PERMISSIONS_AND_TOGGLE.md](docs/PERMISSIONS_AND_TOGGLE.md) 和 [docs/FOLIO_NEXT_AUDIT.md](docs/FOLIO_NEXT_AUDIT.md)。第三轮：[docs/NESTED_BLOCKS.md](docs/NESTED_BLOCKS.md)、[docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)、[docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)。
+阶段说明和总体验收在 [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md)。分阶段文档：[docs/EDITOR_RICH_TEXT.md](docs/EDITOR_RICH_TEXT.md)、[docs/EDITOR_DRAG.md](docs/EDITOR_DRAG.md)、[docs/PHASE1_TESTS.md](docs/PHASE1_TESTS.md)、[docs/NEW_BLOCKS.md](docs/NEW_BLOCKS.md)、[docs/PAGE_TREE_OPS.md](docs/PAGE_TREE_OPS.md)、[docs/CONFLICT_AND_SAVE.md](docs/CONFLICT_AND_SAVE.md)、[docs/LARGE_PAGE_TEST.md](docs/LARGE_PAGE_TEST.md)。加固的自检在 [docs/CI_SETUP.md](docs/CI_SETUP.md)、[docs/INLINE_LINKS.md](docs/INLINE_LINKS.md)、[docs/IMAGE_STORAGE.md](docs/IMAGE_STORAGE.md)、[docs/PERMISSIONS_AND_TOGGLE.md](docs/PERMISSIONS_AND_TOGGLE.md) 和 [docs/FOLIO_NEXT_AUDIT.md](docs/FOLIO_NEXT_AUDIT.md)。第三轮：[docs/NESTED_BLOCKS.md](docs/NESTED_BLOCKS.md)、[docs/DEPLOY_PRODUCTION.md](docs/DEPLOY_PRODUCTION.md)、[docs/PAGE_HISTORY.md](docs/PAGE_HISTORY.md)、[docs/PRESENCE.md](docs/PRESENCE.md)。
 
 重置本地数据：
 
@@ -131,7 +131,7 @@ npm run db:reset
 
 ## 已知限制
 
-- 没有实时协作。同一页在别处已经保存时，后提交会停在冲突提示上，要选择覆盖或放弃并刷新。
+- 能看到同一页上的其他成员，别人保存后会提示「有新版本」。这不是同时编辑同一段文字。不刷新就保存，后提交仍会停在冲突提示上，要选择覆盖或放弃并刷新。说明在 [docs/PRESENCE.md](docs/PRESENCE.md)。
 - 块内有加粗、斜体、删除线、行内代码和链接。斜体用倾斜变换，占位宽度和光标一致。链接只接受 http 和 https，编辑时要点「打开」，分享页和预览里可以直接点。
 - 可以上传图片。单张不超过 2MB，只接受 png、jpeg、gif、webp。默认写在本机 `public/uploads`，没有持久磁盘时要改成对象存储。
 - 同级块可以拖拽排序。页面树可以换顺序和层级；置顶页仍排在同级未置顶页前面。

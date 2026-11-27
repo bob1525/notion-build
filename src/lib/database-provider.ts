@@ -71,6 +71,7 @@ export function resetStatements(provider: DatabaseProvider) {
       'DELETE FROM "Favorite"',
       'DELETE FROM "Block"',
       'DELETE FROM "PageSnapshot"',
+      'DELETE FROM "PagePresence"',
       'DELETE FROM "Page"',
       'DELETE FROM "WorkspaceMember"',
       'DELETE FROM "Workspace"',
@@ -82,6 +83,7 @@ export function resetStatements(provider: DatabaseProvider) {
     'DELETE FROM "Favorite"',
     'DELETE FROM "Block"',
     'DELETE FROM "PageSnapshot"',
+    'DELETE FROM "PagePresence"',
     'DELETE FROM "Page"',
     'DELETE FROM "UserPreference"',
     'DELETE FROM "WorkspaceMember"',
@@ -107,5 +109,22 @@ export function pageHistoryStatements(provider: DatabaseProvider) {
   CONSTRAINT "PageSnapshot_editorId_fkey" FOREIGN KEY ("editorId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 )`,
     `CREATE INDEX IF NOT EXISTS "PageSnapshot_pageId_updatedAt_idx" ON "PageSnapshot"("pageId", "updatedAt")`,
+  ]
+}
+
+export function presenceStatements(provider: DatabaseProvider) {
+  const timestamp = provider === "postgresql" ? "TIMESTAMP(3)" : "DATETIME"
+  return [
+    `CREATE TABLE IF NOT EXISTS "PagePresence" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "pageId" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "activity" TEXT NOT NULL,
+  "seenAt" ${timestamp} NOT NULL,
+  CONSTRAINT "PagePresence_pageId_fkey" FOREIGN KEY ("pageId") REFERENCES "Page" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT "PagePresence_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "PagePresence_pageId_userId_key" ON "PagePresence"("pageId", "userId")`,
+    `CREATE INDEX IF NOT EXISTS "PagePresence_pageId_seenAt_idx" ON "PagePresence"("pageId", "seenAt")`,
   ]
 }

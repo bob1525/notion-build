@@ -19,6 +19,7 @@ model User {
   pages        Page[]            @relation("PageAuthor")
   favorites    Favorite[]
   snapshots    PageSnapshot[]
+  presence     PagePresence[]
   preference   UserPreference?
 }
 
@@ -67,6 +68,7 @@ model Page {
   blocks      Block[]
   favorites   Favorite[]
   snapshots   PageSnapshot[]
+  presence    PagePresence[]
 
   @@index([workspaceId, parentId, position])
   @@index([authorId])
@@ -123,4 +125,17 @@ model PageSnapshot {
   editor    User     @relation(fields: [editorId], references: [id], onDelete: Cascade)
 
   @@index([pageId, updatedAt])
+}
+
+model PagePresence {
+  id       String   @id @default(cuid())
+  pageId   String
+  userId   String
+  activity String   @default("viewing")
+  seenAt   DateTime @default(now())
+  page     Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, userId])
+  @@index([pageId, seenAt])
 }

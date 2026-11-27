@@ -24,7 +24,9 @@ Prisma 在生成客户端时就选定数据库种类。生成出来的那一份�
 
 页面历史是后加的表。`schema.prisma` 里的 `PageSnapshot` 由 `db push` 建出来。`scripts/apply-page-history-migration.ts` 再用对应方言执行 `CREATE TABLE IF NOT EXISTS`，已经有这张表时什么都不做。`db:deploy` 也会带上它。`prisma/migrations` 里那份 SQL 仍是 SQLite 的，不要拿到 PostgreSQL 上执行。
 
-播种时，SQLite 仍先关掉外键再删除，PostgreSQL 按子表到父表删除。两种数据库都会在删除页面和用户之前删掉 `PageSnapshot`，原来的那些表也继续删除。语句由测试锁住。
+在线状态同样是后加的表。`PagePresence` 由 `db push` 建出来。`scripts/apply-presence-migration.ts` 再按 SQLite 或 PostgreSQL 执行一次 `CREATE TABLE IF NOT EXISTS`。`db:deploy` 和 `test:e2e` 都会跑它。迁移目录里的那份 SQL 仍是 SQLite 的。用法在 [PRESENCE.md](./PRESENCE.md)。
+
+播种时，SQLite 仍先关掉外键再删除，PostgreSQL 按子表到父表删除。两种数据库都会在删除页面和用户之前删掉 `PageSnapshot` 和 `PagePresence`，原来的那些表也继续删除。语句由测试锁住。
 
 ## 你需要准备的东西
 
@@ -240,4 +242,4 @@ GitHub Actions 上提交 `d630c6e` 的 pull request 运行 [45968147499](https:/
 - 没有自动备份和告警。Neon、Supabase 自己的备份要在它们的控制台里打开。
 - 自定义域名可以在 Vercel 的 Domains 里加。本文停在 `vercel.app`。
 - 没有把 SQLite 里已经写好的 `prisma/dev.db` 导入线上。线上是空库，或只有播种的演示数据。
-- 页面历史、在线状态还不在这一阶段。
+- 页面历史和在线状态的用法分别在 [PAGE_HISTORY.md](./PAGE_HISTORY.md) 和 [PRESENCE.md](./PRESENCE.md)。上面的部署命令已经会把这两张表补上。

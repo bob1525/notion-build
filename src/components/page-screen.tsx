@@ -3,7 +3,7 @@
 import { ChevronRight, Eye, Globe, History, Link2, Lock, Pin, Star, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { BlockEditor, type BlockEditorHandle } from "@/components/block-editor"
 import { PageHistoryDialog } from "@/components/page-history-dialog"
 import { BlockView } from "@/components/block-view"
@@ -16,6 +16,7 @@ import { COVERS, EMOJIS } from "@/lib/constants"
 import { cn } from "@/lib/cn"
 import { displayTitle, formatDateTime } from "@/lib/format"
 import { canDeletePage, canEditPage, canManageVisibility } from "@/lib/permissions"
+import { PRESENCE_POLL_MS, hasNewerRevision, type PresencePeer } from "@/lib/presence"
 import { comparePages } from "@/lib/tree"
 import type { BlockDTO, PageDetail, PageMeta } from "@/lib/types"
 
@@ -44,6 +45,8 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const [conflictKind, setConflictKind] = useState<"save" | "restore">("save")
   const [historyOpen, setHistoryOpen] = useState(false)
   const [restoring, setRestoring] = useState(false)
+  const [peers, setPeers] = useState<PresencePeer[]>([])
+  const [fresh, setFresh] = useState(false)
   const favoriteLock = useRef(false)
   const conflictLock = useRef(false)
   const pendingRestore = useRef<string | null>(null)
@@ -55,6 +58,29 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const editorRef = useRef<BlockEditorHandle>(null)
   const titleRef = useRef<HTMLTextAreaElement>(null)
+  const editorActive = useRef(false)
+  const ackedRevision = useRef(initial.revision)
+  const remoteRevision = useRef(initial.revision)
+
+  const syncFresh = useCallback(() => {
+    setFresh(hasNewerRevision(ackedRevision.current, remoteRevision.current) && !conflictLock.current)
+  }, [])
+
+  const noteOwnRevision = useCallback((revision: number) => {
+    ackedRevision.current = Math.max(ackedRevision.current, revision)
+    syncFresh()
+  }, [syncFresh])
+
+  const noteRemoteRevision = useCallback((revision: number) => {
+    remoteRevision.current = Math.max(remoteRevision.current, revision)
+    syncFresh()
+  }, [syncFresh])
+
+  const adoptRevision = useCallback((revision: number) => {
+    ackedRevision.current = revision
+    remoteRevision.current = revision
+    setFresh(false)
+  }, [])
 
   useEffect(() => {
     const element = titleRef.current
@@ -93,6 +119,60 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     return () => window.removeEventListener("keydown", onKey)
   }, [])
 
+  useEffect(() => {
+    const pageId = initial.id
+    let stopped = false
+    async function tick() {
+      const activity = dirty.current || flushing.current || editorActive.current ? "editing" : "viewing"
+      try {
+        const data = await api<{ revision: number; peers: PresencePeer[] }>(`/api/pages/${pageId}/presence`, {
+          method: "POST",
+          cache: "no-store",
+          body: JSON.stringify({ activity }),
+        })
+        if (stopped) return
+        setPeers(data.peers)
+        noteRemoteRevision(data.revision)
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) stopped = true
+      }
+    }
+    void tick()
+    const interval = window.setInterval(() => {
+      if (!stopped) void tick()
+    }, PRESENCE_POLL_MS)
+    const onFocus = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null
+      const active = Boolean(target?.closest?.("[data-testid='page-title'], [data-testid='block-input']"))
+      editorActive.current = active
+      if (active && !stopped) void tick()
+    }
+    const onBlur = () => {
+      window.setTimeout(() => {
+        const target = document.activeElement as HTMLElement | null
+        editorActive.current = Boolean(target?.closest?.("[data-testid='page-title'], [data-testid='block-input']"))
+      }, 0)
+    }
+    const leave = () => {
+      void fetch(`/api/pages/${pageId}/presence`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activity: "leave" }),
+        keepalive: true,
+      })
+    }
+    window.addEventListener("focusin", onFocus)
+    window.addEventListener("focusout", onBlur)
+    window.addEventListener("pagehide", leave)
+    return () => {
+      stopped = true
+      window.clearInterval(interval)
+      window.removeEventListener("focusin", onFocus)
+      window.removeEventListener("focusout", onBlur)
+      window.removeEventListener("pagehide", leave)
+    }
+  }, [initial.id, noteRemoteRevision])
+
   function queueSave() {
     dirty.current = true
     if (conflictLock.current) return
@@ -123,6 +203,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         method: "PATCH",
         body: JSON.stringify(pagePayload(snapshotMeta, snapshotBlocks, { overwrite })),
       })
+      noteOwnRevision(saved.revision)
       const latest = JSON.stringify(pagePayload(metaRef.current, blocksRef.current))
       const favorited = snapshotMeta.favorited === metaRef.current.favorited ? saved.favorited : metaRef.current.favorited
       if (latest === fingerprint) {
@@ -175,6 +256,24 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
     }
   }
 
+  async function refreshRemote() {
+    if (flushing.current) {
+      toast("正在保存，请稍后再刷新")
+      return
+    }
+    if (timer.current) clearTimeout(timer.current)
+    try {
+      const latest = await api<PageDetail>(`/api/pages/${metaRef.current.id}`)
+      dirty.current = false
+      conflictLock.current = false
+      adoptRevision(latest.revision)
+      applyPage(latest)
+      setStatus("saved")
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : "没有刷新页面")
+    }
+  }
+
   async function discardConflict() {
     pendingRestore.current = null
     try {
@@ -182,6 +281,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
       conflictLock.current = false
       dirty.current = false
       if (timer.current) clearTimeout(timer.current)
+      adoptRevision(latest.revision)
       applyPage(latest)
       setConflictOpen(false)
       setStatus("saved")
@@ -217,6 +317,7 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
       conflictLock.current = false
       dirty.current = false
       if (timer.current) clearTimeout(timer.current)
+      adoptRevision(saved.revision)
       applyPage(saved)
       setStatus("saved")
       setConflictOpen(false)
@@ -396,6 +497,36 @@ export function PageScreen({ initial }: { initial: PageDetail }) {
         <p className="mb-3 text-xs text-faint">
           {meta.authorName} · 编辑于 {formatDateTime(meta.updatedAt)}
         </p>
+        {peers.length > 0 ? (
+          <div data-testid="presence-peers" className="mb-3 flex flex-wrap items-center gap-2">
+            {peers.map((peer) => (
+              <span
+                key={peer.userId}
+                data-testid="presence-peer"
+                data-user-name={peer.name}
+                data-activity={peer.activity}
+                className="inline-flex items-center gap-1.5 rounded-full bg-black/[0.04] py-1 pl-1 pr-2 text-xs text-muted"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[10px] font-medium text-white" aria-hidden>
+                  {peer.name.slice(0, 1)}
+                </span>
+                {peer.name}
+                {peer.activity === "editing" ? "正在编辑" : "正在查看"}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {fresh && !conflictOpen ? (
+          <div data-testid="presence-fresh" data-dirty={dirty.current ? "true" : "false"} className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm">
+            <span>
+              有新版本。刷新后再改，可以少碰到保存冲突。
+              {dirty.current ? "刷新会丢掉还没保存的修改。" : ""}
+            </span>
+            <button type="button" data-testid="presence-refresh" className="rounded-md bg-white px-2 py-1 text-xs shadow-card" onClick={() => void refreshRemote()}>
+              刷新
+            </button>
+          </div>
+        ) : null}
 
         <div className="mb-6 flex flex-wrap items-center gap-1.5">
           <div data-testid="visibility-control" data-visibility={meta.visibility} className="inline-flex rounded-md bg-black/[0.04] p-0.5">
